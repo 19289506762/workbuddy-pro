@@ -141,7 +141,7 @@
     @keyframes slideIn { from{transform:translateX(100%); opacity:0;} to{transform:translateX(0); opacity:1;} }
     @keyframes fadeOut { to{opacity:0; transform:translateX(100%);} }
 
-    /* 座次表 - 重做版 */
+    /* 座次表 */
     .seat-grid-wrapper { overflow-x:auto; padding:10px 0; }
     .seat-row { display:flex; align-items:center; justify-content:center; margin-bottom:8px; }
     .seat-group { display:flex; gap:4px; }
@@ -157,19 +157,16 @@
     .seat-item.female { border-left:3px solid #ec4899; }
     .seat-item.selected { border-color:var(--primary); box-shadow:0 0 15px rgba(109,93,252,0.5); }
 
-    /* 随机点名 */
     .rollcall-display-box { font-size:52px; font-weight:800; margin:15px 0; color:#fff; text-shadow:0 0 30px rgba(109,93,252,0.8); letter-spacing:2px; min-height:80px; display:flex; align-items:center; justify-content:center; }
     .rollcall-display-box.rolling { animation:pulse 0.2s ease infinite alternate; }
     @keyframes pulse { from{transform:scale(1);} to{transform:scale(1.05);} }
 
-    /* 作业卡片 */
     .homework-card { background:var(--bg-card); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:12px; margin-bottom:10px; cursor:pointer; transition:var(--transition); }
     .homework-card:hover { background:var(--bg-card-hover); transform:translateY(-2px); box-shadow:var(--shadow); }
     .homework-card .hw-subject { font-size:12px; font-weight:600; color:var(--primary-light); }
     .homework-card .hw-title { font-size:14px; font-weight:600; color:#fff; }
     .homework-card .hw-meta { font-size:11px; color:var(--text-secondary); }
 
-    /* 朋友圈 */
     .post-card { background:var(--bg-card); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:14px; margin-bottom:10px; cursor:pointer; transition:var(--transition); }
     .post-card:hover { background:var(--bg-card-hover); transform:translateY(-2px); }
     .post-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
@@ -177,14 +174,12 @@
     .post-media-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:6px; margin-top:8px; }
     .post-media-grid img { width:100%; border-radius:6px; object-fit:cover; }
 
-    /* 学生头像墙 */
     .avatar-wall { display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:12px; }
     .avatar-item { text-align:center; cursor:pointer; transition:var(--transition); }
     .avatar-item:hover { transform:scale(1.1); }
     .avatar-circle { width:60px; height:60px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:bold; color:#fff; margin:0 auto 5px; }
     .avatar-item span { font-size:11px; color:var(--text-secondary); }
 
-    /* 课程表色块 */
     .schedule-block { border-radius:6px; padding:4px 6px; margin:2px 0; cursor:pointer; transition:var(--transition); }
     .schedule-block:hover { transform:scale(1.03); box-shadow:0 0 10px rgba(0,0,0,0.3); }
     .schedule-subject { font-weight:600; font-size:11px; }
@@ -268,7 +263,8 @@
       selectedExamId: null, commentList: [], unreadNotifications: 0,
       scheduleView: 'class', commView: 'overview',
       navCollapsed: {}, selectedStudentId: null,
-      schoolStartDate: '2026-09-01', selectedSemesterId: null
+      schoolStartDate: '2026-09-01', selectedSemesterId: null,
+      periodTimes: null
     };
 
     // ==================== 工具函数 ====================
@@ -316,13 +312,12 @@
     function getRoleLabel(role) { const map = { 'admin': '系统管理员', 'class_teacher': '班主任', 'subject_teacher': '科任教师' }; return map[role] || role; }
     function exportStudents(data) {
       if (!data || data.length === 0) { showToast('没有学生数据可导出', 'warning'); return; }
-      const rows = data.map(s => ({ '学号': s.student_no || '', '姓名': s.name, '性别': s.gender || '', '座位': s.seat || '', '职务': s.role || '', '家长姓名': s.parent_name || '', '家长电话': s.parent_phone || '', '住址': s.address || '' }));
+      const rows = data.map(s => ({ '学号': s.student_no || '', '姓名': s.name, '性别': s.gender || '', '族别': s.ethnicity || '', '座位': s.seat || '', '职务': s.role || '', '家长姓名': s.parent_name || '', '家长电话': s.parent_phone || '', '住址': s.address || '' }));
       const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, '学生名单'); XLSX.writeFile(wb, `学生名单_${new Date().toISOString().split('T')[0]}.xlsx`);
       showToast('导出成功', 'success');
     }
 
-    // ==================== AI 调用封装 ====================
     async function callAI(type, payload) {
       try {
         const response = await fetch(AI_WORKER_URL, {
@@ -520,7 +515,9 @@
     window.switchPage = switchPage;
     window.switchPageWithStudent = function(pageId, studentId) { switchPage(pageId, studentId); };
 
-    // ==================== 工作台 ====================
+    // ==================== 工作台（动态实时+删除、科代表） ====================
+    let activitySubscription = null;
+
     function loadDashboard() {
       const container = document.getElementById('page-dashboard');
       container.innerHTML = `
@@ -529,6 +526,15 @@
           <div class="stat-card"><div class="stat-icon green"><i class="fa-solid fa-user-check"></i></div><div class="stat-info"><h4 id="stat-attendance">-</h4><p>今日出勤率</p></div></div>
           <div class="stat-card"><div class="stat-icon orange"><i class="fa-solid fa-book-open"></i></div><div class="stat-info"><h4 id="stat-homework">-</h4><p>待批作业</p></div></div>
           <div class="stat-card"><div class="stat-icon red"><i class="fa-solid fa-chart-bar"></i></div><div class="stat-info"><h4 id="stat-exam">-</h4><p>最近考试均分</p></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>班级管理团队</h3>
+            <div class="form-row">
+              <button class="btn btn-primary btn-sm" id="manage-cadres-btn"><i class="fa-solid fa-user-tie"></i> 班干部</button>
+              <button class="btn btn-outline btn-sm" id="manage-reps-btn"><i class="fa-solid fa-book"></i> 科代表</button>
+            </div>
+          </div>
+          <div id="team-list" class="empty-state"><i class="fa-solid fa-users"></i><p>未设置班干部/科代表</p></div>
         </div>
         <div class="card">
           <div class="card-header"><h3>快捷操作</h3></div>
@@ -541,9 +547,13 @@
             <div class="quick-action" data-page="insights"><i class="fa-solid fa-magnifying-glass-chart"></i><span>数据洞察</span></div>
           </div>
         </div>
-        <div class="card"><div class="card-header"><h3>最新动态</h3></div><div id="activity-list" class="empty-state"><i class="fa-regular fa-clock"></i><p>暂无动态</p></div></div>
-      `;
+        <div class="card">
+          <div class="card-header"><h3>最新动态</h3><span class="badge badge-info" id="activity-badge">实时</span></div>
+          <div id="activity-list" class="empty-state"><i class="fa-regular fa-clock"></i><p>暂无动态</p></div>
+        </div>`;
       if (!AppState.currentProfile) return;
+
+      // 加载基础统计
       supabase.from('classes').select('name').eq('id', AppState.currentProfile.class_id).single().then(({ data }) => {
         document.getElementById('banner-class-info').textContent = data ? `班级：${data.name}` : '班级：未设置';
       });
@@ -560,6 +570,7 @@
       supabase.from('homework').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id).then(({ count }) => {
         document.getElementById('stat-homework').textContent = count || 0;
       });
+
       const hour = new Date().getHours();
       let greeting = '你好';
       if (hour < 6) greeting = '凌晨好';
@@ -567,39 +578,155 @@
       else if (hour < 18) greeting = '下午好';
       else greeting = '晚上好';
       document.getElementById('banner-greeting').textContent = `${greeting}，${AppState.currentProfile.realname || AppState.currentProfile.username}老师！`;
-      supabase.from('activity_logs').select('*').eq('class_id', AppState.currentProfile.class_id).order('created_at', { ascending: false }).limit(10).then(({ data: logs }) => {
-        const activityList = document.getElementById('activity-list');
-        if (logs && logs.length > 0) {
-          activityList.innerHTML = logs.map(log => `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><span>${escapeHtml(log.action)} ${escapeHtml(log.details || '')}</span><span style="color:var(--text-secondary);font-size:11px;">${new Date(log.created_at).toLocaleString('zh-CN')}</span></div>`).join('');
-        }
-      });
+
+      // 加载班干部和科代表
+      loadTeam();
+      // 加载动态列表
+      loadActivityList();
+      // 绑定快捷操作
       container.querySelectorAll('.quick-action[data-page]').forEach(el => el.addEventListener('click', () => switchPage(el.dataset.page)));
+      // 绑定管理按钮
+      document.getElementById('manage-cadres-btn').addEventListener('click', () => openCadresModal());
+      document.getElementById('manage-reps-btn').addEventListener('click', () => openRepsModal());
+      // 建立 Realtime 订阅
+      setupActivitySubscription();
+      // Banner 信息
       loadBannerInfo();
     }
 
-    async function loadBannerInfo() {
-      const infoDiv = document.getElementById('banner-date-info');
-      const today = new Date();
-      const dateStr = `${today.getFullYear()}年${today.getMonth()+1}月${today.getDate()}日 星期${'日一二三四五六'[today.getDay()]}`;
-      let schoolStart = AppState.schoolStartDate || '2026-09-01';
-      const startDate = new Date(schoolStart);
-      const diffDays = Math.ceil((startDate - today) / (24*60*60*1000));
-      let daysText = '';
-      if (diffDays > 0) daysText = `距开学还有 ${diffDays} 天`;
-      else if (diffDays === 0) daysText = '今天开学！';
-      else daysText = `已开学 ${Math.abs(diffDays)} 天`;
-      const quotes = [
-        '教育不是灌满一桶水，而是点燃一把火。 —— 叶芝',
-        '学而不思则罔，思而不学则殆。 —— 孔子',
-        '教育是改变世界最强大的武器。 —— 曼德拉',
-        'The best way to predict the future is to create it. —— Peter Drucker',
-        '千里之行，始于足下。 —— 老子',
-        '兴趣是最好的老师。 —— 爱因斯坦',
-        '教育的目的在于让人能够继续教育自己。 —— 杜威',
-        '授人以鱼不如授人以渔。 —— 谚语'
-      ];
-      const quote = quotes[Math.floor(Math.random() * quotes.length)];
-      infoDiv.innerHTML = `${dateStr}<br>${daysText}<br><em>${quote}</em>`;
+    async function loadTeam() {
+      const container = document.getElementById('team-list');
+      // 加载班干部
+      const { data: cadres } = await supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id).not('role', 'is', null).not('role', 'eq', '');
+      const { data: reps } = await supabase.from('subject_reps').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id);
+      let html = '';
+      if (cadres && cadres.length > 0) {
+        cadres.forEach(s => {
+          const color = s.avatar_color || '#6d5dfc';
+          html += `<div style="display:inline-flex;align-items:center;gap:8px;margin:5px 10px 5px 0;padding:5px 10px;background:rgba(255,255,255,0.05);border-radius:20px;">
+            <div class="avatar-circle" style="background:${color};width:30px;height:30px;font-size:14px;">${escapeHtml(s.name.charAt(0))}</div>
+            <span style="font-size:12px;">${escapeHtml(s.name)}</span>
+            <span class="badge badge-info">${escapeHtml(s.role)}</span>
+          </div>`;
+        });
+      }
+      if (reps && reps.length > 0) {
+        reps.forEach(r => {
+          const color = r.students?.avatar_color || '#10b981';
+          html += `<div style="display:inline-flex;align-items:center;gap:8px;margin:5px 10px 5px 0;padding:5px 10px;background:rgba(255,255,255,0.05);border-radius:20px;">
+            <div class="avatar-circle" style="background:${color};width:30px;height:30px;font-size:14px;">${escapeHtml(r.students?.name?.charAt(0) || '')}</div>
+            <span style="font-size:12px;">${escapeHtml(r.students?.name || '')}</span>
+            <span class="badge badge-success">${escapeHtml(r.subject)}科代表</span>
+          </div>`;
+        });
+      }
+      container.innerHTML = html || '<i class="fa-solid fa-users"></i><p>未设置班干部/科代表</p>';
+    }
+
+    async function loadActivityList() {
+      const { data: logs, error } = await supabase.from('activity_logs').select('*').eq('class_id', AppState.currentProfile.class_id).order('created_at', { ascending: false }).limit(20);
+      if (error) return;
+      const container = document.getElementById('activity-list');
+      if (!logs || logs.length === 0) {
+        container.innerHTML = '<i class="fa-regular fa-clock"></i><p>暂无动态</p>';
+        return;
+      }
+      container.innerHTML = logs.map(log => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+          <span>${escapeHtml(log.action)} ${escapeHtml(log.details || '')}</span>
+          <span style="color:var(--text-secondary);font-size:11px;">${new Date(log.created_at).toLocaleString('zh-CN')}</span>
+          <button class="btn btn-sm btn-danger delete-activity-btn" data-id="${log.id}" style="margin-left:10px;">删除</button>
+        </div>
+      `).join('');
+      container.querySelectorAll('.delete-activity-btn').forEach(btn => btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        if (confirm('确定删除该动态？')) {
+          await supabase.from('activity_logs').delete().eq('id', id);
+          showToast('动态已删除', 'success');
+          loadActivityList();
+        }
+      }));
+    }
+
+    function setupActivitySubscription() {
+      if (activitySubscription) supabase.removeChannel(activitySubscription);
+      activitySubscription = supabase
+        .channel('activity-changes')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_logs', filter: `class_id=eq.${AppState.currentProfile.class_id}` }, () => {
+          loadActivityList();
+        })
+        .subscribe();
+    }
+
+    function openCadresModal() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>班干部管理</h3>
+        <div id="cadres-list" style="margin-bottom:10px;">加载中...</div>
+        <div class="form-row" style="margin-top:8px;">
+          <select id="cadre-student" style="flex:2;"><option value="">选择学生</option>${AppState.allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}</select>
+          <select id="cadre-role" style="flex:1;"><option value="">选择职务</option>${['班长','副班长','学习委员','纪律委员','劳动委员','体育委员','文艺委员','生活委员','宣传委员','组织委员'].map(r => `<option value="${r}">${r}</option>`).join('')}</select>
+          <button class="btn btn-primary btn-sm" id="add-cadre-btn">添加</button>
+        </div>
+        <div class="modal-actions"><button class="btn btn-outline" id="cadre-close">关闭</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('cadre-close').addEventListener('click', () => modal.remove());
+      loadCadresList(modal.querySelector('#cadres-list'));
+      document.getElementById('add-cadre-btn').addEventListener('click', async () => {
+        const studentId = modal.querySelector('#cadre-student').value;
+        const role = modal.querySelector('#cadre-role').value;
+        if (!studentId || !role) { showToast('请选择学生和职务', 'error'); return; }
+        await supabase.from('students').update({ role }).eq('id', studentId);
+        showToast('班干部已设置', 'success');
+        loadCadresList(modal.querySelector('#cadres-list'));
+        loadTeam();
+      });
+    }
+
+    async function loadCadresList(container) {
+      const { data: cadres } = await supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id).not('role', 'is', null).not('role', 'eq', '');
+      if (cadres.length === 0) { container.innerHTML = '暂无班干部'; return; }
+      container.innerHTML = cadres.map(s => `<div style="display:flex;justify-content:space-between;padding:5px;background:rgba(255,255,255,0.05);border-radius:4px;margin-bottom:4px;"><span>${escapeHtml(s.name)} - ${escapeHtml(s.role)}</span><button class="btn btn-sm btn-danger remove-cadre-btn" data-id="${s.id}">移除</button></div>`).join('');
+      container.querySelectorAll('.remove-cadre-btn').forEach(btn => btn.addEventListener('click', async () => {
+        await supabase.from('students').update({ role: null }).eq('id', btn.dataset.id);
+        loadCadresList(container);
+        loadTeam();
+      }));
+    }
+
+    function openRepsModal() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>科代表管理</h3>
+        <div id="reps-list" style="margin-bottom:10px;">加载中...</div>
+        <div class="form-row" style="margin-top:8px;">
+          <select id="rep-student" style="flex:2;"><option value="">选择学生</option>${AppState.allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}</select>
+          <select id="rep-subject" style="flex:1;"><option value="">选择科目</option>${['语文','数学','英语','物理','化学','生物','政治','历史','地理'].map(s => `<option value="${s}">${s}</option>`).join('')}</select>
+          <button class="btn btn-primary btn-sm" id="add-rep-btn">添加</button>
+        </div>
+        <div class="modal-actions"><button class="btn btn-outline" id="rep-close">关闭</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('rep-close').addEventListener('click', () => modal.remove());
+      loadRepsList(modal.querySelector('#reps-list'));
+      document.getElementById('add-rep-btn').addEventListener('click', async () => {
+        const studentId = modal.querySelector('#rep-student').value;
+        const subject = modal.querySelector('#rep-subject').value;
+        if (!studentId || !subject) { showToast('请选择学生和科目', 'error'); return; }
+        await supabase.from('subject_reps').insert({ class_id: AppState.currentProfile.class_id, student_id: studentId, subject });
+        showToast('科代表已设置', 'success');
+        loadRepsList(modal.querySelector('#reps-list'));
+        loadTeam();
+      });
+    }
+
+    async function loadRepsList(container) {
+      const { data: reps } = await supabase.from('subject_reps').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id);
+      if (reps.length === 0) { container.innerHTML = '暂无科代表'; return; }
+      container.innerHTML = reps.map(r => `<div style="display:flex;justify-content:space-between;padding:5px;background:rgba(255,255,255,0.05);border-radius:4px;margin-bottom:4px;"><span>${escapeHtml(r.students?.name || '')} - ${escapeHtml(r.subject)}科代表</span><button class="btn btn-sm btn-danger remove-rep-btn" data-id="${r.id}">移除</button></div>`).join('');
+      container.querySelectorAll('.remove-rep-btn').forEach(btn => btn.addEventListener('click', async () => {
+        await supabase.from('subject_reps').delete().eq('id', btn.dataset.id);
+        loadRepsList(container);
+        loadTeam();
+      }));
     }
 
     // ==================== 初始化 ====================
@@ -615,7 +742,10 @@
           applyBannerBackground(); loadNotificationBadge();
           supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id).then(({ data }) => { AppState.allStudents = data || []; });
           supabase.from('settings').select('*').eq('class_id', AppState.currentProfile.class_id).maybeSingle().then(({ data }) => {
-            if (data) AppState.schoolStartDate = data.school_start_date || '2026-09-01';
+            if (data) {
+              AppState.schoolStartDate = data.school_start_date || '2026-09-01';
+              AppState.periodTimes = data.period_times;
+            }
           });
         } else { await supabase.auth.signOut(); showAuth(); }
       } else { showAuth(); }
@@ -649,9 +779,10 @@
           <div class="card-header">
             <h3>学生列表</h3>
             <div class="form-row" style="flex:1; gap:6px;">
-              <select id="filter-gender" style="max-width:100px;"><option value="">全部性别</option><option value="男">男</option><option value="女">女</option></select>
-              <select id="filter-role" style="max-width:120px;"><option value="">全部职务</option><option value="班干部">班干部</option></select>
-              <input type="text" id="search-student" placeholder="搜索姓名/学号" style="max-width:160px;">
+              <select id="filter-gender" style="max-width:90px;"><option value="">全部性别</option><option value="男">男</option><option value="女">女</option></select>
+              <select id="filter-ethnicity" style="max-width:110px;"><option value="">全部族别</option></select>
+              <select id="filter-role" style="max-width:110px;"><option value="">全部职务</option><option value="班干部">班干部</option></select>
+              <input type="text" id="search-student" placeholder="搜索姓名/学号/族别" style="max-width:160px;">
               <button class="btn btn-primary btn-sm" id="add-student-btn"><i class="fa-solid fa-plus"></i> 添加</button>
               <button class="btn btn-outline btn-sm" id="import-students-btn"><i class="fa-solid fa-file-import"></i> 导入</button>
               <button class="btn btn-outline btn-sm" id="export-students-btn"><i class="fa-solid fa-download"></i> 导出</button>
@@ -661,7 +792,7 @@
           <div class="table-responsive">
             <table id="students-table">
               <thead><tr>
-                <th>学号</th><th>姓名</th><th>性别</th><th>座位</th><th>职务</th><th>家长姓名</th><th>家长电话</th><th>住址</th><th>操作</th>
+                <th>头像</th><th>学号</th><th>姓名</th><th>性别</th><th>族别</th><th>座位</th><th>职务</th><th>家长姓名</th><th>家长电话</th><th>住址</th><th>操作</th>
               </tr></thead>
               <tbody id="students-tbody"></tbody>
             </table>
@@ -676,6 +807,10 @@
         document.getElementById('stu-male').textContent = data.filter(s => s.gender === '男').length;
         document.getElementById('stu-female').textContent = data.filter(s => s.gender === '女').length;
         document.getElementById('stu-cadre').textContent = data.filter(s => s.role && s.role.trim() !== '').length;
+        // 填充族别筛选下拉框
+        const ethnicities = [...new Set(data.map(s => s.ethnicity).filter(Boolean))];
+        const ethSelect = document.getElementById('filter-ethnicity');
+        ethSelect.innerHTML = '<option value="">全部族别</option>' + ethnicities.map(e => `<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('');
         applyStudentFilters();
       });
       document.getElementById('add-student-btn').addEventListener('click', () => openStudentModal());
@@ -683,18 +818,21 @@
       document.getElementById('export-students-btn').addEventListener('click', () => exportStudents(AppState.allStudents));
       document.getElementById('clear-students-btn').addEventListener('click', clearAllStudents);
       document.getElementById('filter-gender').addEventListener('change', applyStudentFilters);
+      document.getElementById('filter-ethnicity').addEventListener('change', applyStudentFilters);
       document.getElementById('filter-role').addEventListener('change', applyStudentFilters);
       document.getElementById('search-student').addEventListener('input', applyStudentFilters);
     }
 
     function applyStudentFilters() {
       const gender = document.getElementById('filter-gender')?.value || '';
+      const ethnicity = document.getElementById('filter-ethnicity')?.value || '';
       const role = document.getElementById('filter-role')?.value || '';
       const search = document.getElementById('search-student')?.value.toLowerCase() || '';
       let filtered = AppState.allStudents.filter(s => {
         if (gender && s.gender !== gender) return false;
+        if (ethnicity && s.ethnicity !== ethnicity) return false;
         if (role === '班干部' && (!s.role || s.role.trim() === '')) return false;
-        if (search && !(s.name.toLowerCase().includes(search) || (s.student_no && s.student_no.toLowerCase().includes(search)))) return false;
+        if (search && !(s.name.toLowerCase().includes(search) || (s.student_no && s.student_no.toLowerCase().includes(search)) || (s.ethnicity && s.ethnicity.toLowerCase().includes(search)))) return false;
         return true;
       });
       const tbody = document.getElementById('students-tbody');
@@ -703,11 +841,14 @@
       if (filtered.length === 0) { empty.style.display = 'block'; return; }
       empty.style.display = 'none';
       filtered.forEach(s => {
+        const color = s.avatar_color || '#6d5dfc';
         const tr = document.createElement('tr');
         tr.innerHTML = `
+          <td><div class="avatar-circle" style="background:${color};width:35px;height:35px;font-size:16px;cursor:pointer;" class="student-avatar-link" data-id="${s.id}">${escapeHtml(s.name.charAt(0))}</div></td>
           <td>${escapeHtml(s.student_no || '-')}</td>
           <td><a href="#" class="student-detail-link" data-id="${s.id}" style="color:#8a7fff;">${escapeHtml(s.name)}</a></td>
           <td>${s.gender === '男' ? '<i class="fa-solid fa-mars" style="color:#3b82f6;"></i> 男' : s.gender === '女' ? '<i class="fa-solid fa-venus" style="color:#ec4899;"></i> 女' : '-'}</td>
+          <td>${escapeHtml(s.ethnicity || '-')}</td>
           <td>${s.seat || '-'}</td>
           <td>${s.role ? `<span class="badge badge-info">${escapeHtml(s.role)}</span>` : '-'}</td>
           <td>${escapeHtml(s.parent_name || '-')}</td>
@@ -719,6 +860,7 @@
           </td>`;
         tbody.appendChild(tr);
       });
+      tbody.querySelectorAll('.student-avatar-link').forEach(div => div.addEventListener('click', () => openStudentDetail(div.dataset.id)));
       tbody.querySelectorAll('.student-detail-link').forEach(a => a.addEventListener('click', e => { e.preventDefault(); openStudentDetail(a.dataset.id); }));
       tbody.querySelectorAll('.edit-student-btn').forEach(btn => btn.addEventListener('click', () => openStudentModal(btn.dataset.id)));
       tbody.querySelectorAll('.delete-student-btn').forEach(btn => btn.addEventListener('click', () => deleteStudent(btn.dataset.id)));
@@ -727,16 +869,20 @@
     function openStudentModal(studentId = null) {
       const student = studentId ? AppState.allStudents.find(s => s.id == studentId) : null;
       const modal = document.createElement('div'); modal.className = 'modal-overlay';
-      modal.innerHTML = `<div class="modal-content"><h3>${student ? '编辑学生' : '添加学生'}</h3>
+      modal.innerHTML = `<div class="modal-content" style="max-width:700px;"><h3>${student ? '编辑学生' : '添加学生'}</h3>
         <div class="form-row" style="flex-direction:column;gap:8px;">
-          <div class="form-row"><input type="text" id="modal-student-no" placeholder="学号" value="${student?.student_no || ''}"><input type="text" id="modal-student-name" placeholder="姓名" value="${student?.name || ''}"></div>
+          <div class="form-row">
+            <input type="text" id="modal-student-no" placeholder="学号" value="${student?.student_no || ''}" style="flex:1;">
+            <input type="text" id="modal-student-name" placeholder="姓名" value="${student?.name || ''}" style="flex:2;">
+          </div>
           <div class="form-row">
             <select id="modal-student-gender"><option value="">选择性别</option><option value="男" ${student?.gender === '男' ? 'selected' : ''}>男</option><option value="女" ${student?.gender === '女' ? 'selected' : ''}>女</option></select>
+            <input type="text" id="modal-student-ethnicity" placeholder="族别（如汉族、彝族）" value="${student?.ethnicity || ''}">
             <input type="number" id="modal-student-seat" placeholder="座位号" value="${student?.seat || ''}">
             <select id="modal-student-role"><option value="">选择职务</option>${['班长','副班长','学习委员','纪律委员','劳动委员','体育委员','文艺委员','生活委员','宣传委员','组织委员'].map(r => `<option value="${r}" ${student?.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
           </div>
-          <div class="form-row"><input type="text" id="modal-parent-name" placeholder="家长姓名" value="${student?.parent_name || ''}"><input type="text" id="modal-student-phone" placeholder="家长电话" value="${student?.parent_phone || ''}"></div>
-          <input type="text" id="modal-student-address" placeholder="家庭住址" value="${student?.address || ''}">
+          <div class="form-row"><input type="text" id="modal-parent-name" placeholder="家长姓名" value="${student?.parent_name || ''}"><input type="text" id="modal-student-phone" placeholder="家长电话" value="${student?.parent_phone || ''}"><input type="text" id="modal-student-address" placeholder="家庭住址" value="${student?.address || ''}"></div>
+          <div class="form-row"><input type="date" id="modal-student-birth" placeholder="出生日期" value="${student?.birth_date || ''}"><input type="text" id="modal-student-hobbies" placeholder="兴趣爱好" value="${student?.hobbies || ''}"><input type="text" id="modal-student-specialty" placeholder="特长" value="${student?.specialty || ''}"><input type="text" id="modal-student-health" placeholder="健康状况" value="${student?.health_status || ''}"></div>
         </div>
         <div class="modal-actions"><button class="btn btn-outline" id="modal-cancel">取消</button><button class="btn btn-primary" id="modal-save">保存</button></div></div>`;
       document.body.appendChild(modal);
@@ -746,11 +892,17 @@
           student_no: document.getElementById('modal-student-no').value.trim() || null,
           name: document.getElementById('modal-student-name').value.trim(),
           gender: document.getElementById('modal-student-gender').value || null,
+          ethnicity: document.getElementById('modal-student-ethnicity').value.trim() || null,
           seat: document.getElementById('modal-student-seat').value ? parseInt(document.getElementById('modal-student-seat').value) : null,
           role: document.getElementById('modal-student-role').value || null,
           parent_name: document.getElementById('modal-parent-name').value.trim() || null,
           parent_phone: document.getElementById('modal-student-phone').value.trim() || null,
-          address: document.getElementById('modal-student-address').value.trim() || null
+          address: document.getElementById('modal-student-address').value.trim() || null,
+          birth_date: document.getElementById('modal-student-birth').value || null,
+          hobbies: document.getElementById('modal-student-hobbies').value.trim() || null,
+          specialty: document.getElementById('modal-student-specialty').value.trim() || null,
+          health_status: document.getElementById('modal-student-health').value.trim() || null,
+          avatar_color: student?.avatar_color || '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0')
         };
         if (!data.name) { showToast('姓名不能为空', 'error'); return; }
         try {
@@ -804,31 +956,59 @@
     function openStudentDetail(studentId) {
       const student = AppState.allStudents.find(s => s.id == studentId);
       if (!student) return;
+      const color = student.avatar_color || '#6d5dfc';
       const modal = document.createElement('div'); modal.className = 'modal-overlay';
-      modal.innerHTML = `<div class="modal-content" style="max-width:700px;"><h3>学生详情 - ${escapeHtml(student.name)}</h3>
-        <div style="color:var(--text-secondary);margin-bottom:10px;">
-          <p>学号：${escapeHtml(student.student_no || '-')} | 性别：${escapeHtml(student.gender || '-')} | 座位：${student.seat || '-'} | 职务：${escapeHtml(student.role || '-')}</p>
-          <p>家长：${escapeHtml(student.parent_name || '-')} | 电话：${escapeHtml(student.parent_phone || '-')} | 住址：${escapeHtml(student.address || '-')}</p>
+      modal.innerHTML = `<div class="modal-content" style="max-width:750px;">
+        <div style="display:flex;align-items:center;gap:15px;margin-bottom:15px;">
+          <div class="avatar-circle" style="background:${color};width:60px;height:60px;font-size:24px;">${escapeHtml(student.name.charAt(0))}</div>
+          <div style="flex:1;">
+            <h3 style="color:#fff;margin-bottom:5px;">${escapeHtml(student.name)}</h3>
+            <div>${student.gender === '男' ? '<i class="fa-solid fa-mars" style="color:#3b82f6;"></i> 男' : student.gender === '女' ? '<i class="fa-solid fa-venus" style="color:#ec4899;"></i> 女' : ''} ${student.role ? `<span class="badge badge-info">${escapeHtml(student.role)}</span>` : ''}</div>
+          </div>
         </div>
-        <h4 style="color:#fff;">成长记录</h4>
-        <div id="record-list">加载中...</div>
-        <div class="form-row" style="margin-top:8px;">
-          <select id="record-type" style="max-width:100px;"><option value="talk">谈话</option><option value="discipline">违纪</option><option value="praise">表扬</option></select>
-          <input type="text" id="record-content" placeholder="记录内容" style="flex:2;">
-          <input type="date" id="record-date" style="max-width:130px;">
-          <button class="btn btn-primary btn-sm" id="add-record-btn">添加</button>
+        <div style="color:var(--text-secondary);margin-bottom:15px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <p>学号：${escapeHtml(student.student_no || '-')}</p>
+          <p>族别：${escapeHtml(student.ethnicity || '-')}</p>
+          <p>座位：${student.seat || '-'}</p>
+          <p>出生日期：${student.birth_date || '-'}</p>
+          <p>家长：${escapeHtml(student.parent_name || '-')}</p>
+          <p>电话：${escapeHtml(student.parent_phone || '-')}</p>
+          <p>住址：${escapeHtml(student.address || '-')}</p>
+          <p>兴趣爱好：${escapeHtml(student.hobbies || '-')}</p>
+          <p>特长：${escapeHtml(student.specialty || '-')}</p>
+          <p>健康状况：${escapeHtml(student.health_status || '-')}</p>
         </div>
-        <div class="modal-actions">
-          <button class="btn btn-outline" id="analysis-jump-btn">综合分析</button>
-          <button class="btn btn-outline" id="modal-close">关闭</button>
-        </div></div>`;
+        <div class="form-row" style="margin-bottom:15px;">
+          <button class="btn btn-primary btn-sm" id="analysis-jump-btn"><i class="fa-solid fa-user-graduate"></i> 综合分析</button>
+          <button class="btn btn-outline btn-sm" id="grades-jump-btn"><i class="fa-solid fa-chart-bar"></i> 成绩详情</button>
+          <button class="btn btn-outline btn-sm" id="records-toggle-btn"><i class="fa-solid fa-clock-rotate-left"></i> 成长记录</button>
+        </div>
+        <div id="records-section" style="display:none;">
+          <h4 style="color:#fff;margin-bottom:8px;">成长记录</h4>
+          <div id="record-list">加载中...</div>
+          <div class="form-row" style="margin-top:8px;">
+            <select id="record-type" style="max-width:100px;"><option value="talk">谈话</option><option value="discipline">违纪</option><option value="praise">表扬</option></select>
+            <input type="text" id="record-content" placeholder="记录内容" style="flex:2;">
+            <input type="date" id="record-date" style="max-width:130px;">
+            <button class="btn btn-primary btn-sm" id="add-record-btn">添加</button>
+          </div>
+        </div>
+        <div class="modal-actions"><button class="btn btn-outline" id="modal-close">关闭</button></div></div>`;
       document.body.appendChild(modal);
       document.getElementById('modal-close').addEventListener('click', () => modal.remove());
       document.getElementById('analysis-jump-btn').addEventListener('click', () => {
         modal.remove();
         switchPageWithStudent('analysis', student.id);
       });
-      loadProfileRecords(student.id, modal.querySelector('#record-list'));
+      document.getElementById('grades-jump-btn').addEventListener('click', () => {
+        modal.remove();
+        switchPageWithStudent('grades', student.id);
+      });
+      document.getElementById('records-toggle-btn').addEventListener('click', () => {
+        const section = document.getElementById('records-section');
+        section.style.display = section.style.display === 'none' ? 'block' : 'none';
+        if (section.style.display === 'block') loadProfileRecords(student.id, modal.querySelector('#record-list'));
+      });
       modal.querySelector('#add-record-btn').addEventListener('click', async () => {
         const type = modal.querySelector('#record-type').value;
         const content = modal.querySelector('#record-content').value.trim();
@@ -852,8 +1032,8 @@
     function openImportModal() {
       const modal = document.createElement('div'); modal.className = 'modal-overlay';
       modal.innerHTML = `<div class="modal-content"><h3>批量导入学生</h3>
-        <p style="color:var(--text-secondary);font-size:12px;margin-bottom:8px;">支持CSV/Excel，列顺序：<strong>学号,姓名,性别,座位,职务,家长姓名,家长电话,住址</strong>（表头自动识别）</p>
-        <textarea id="import-csv" rows="5" placeholder="粘贴CSV数据，例如：&#10;2024001,张三,男,1,班长,张父,13800138000,幸福小区" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;padding:10px;"></textarea>
+        <p style="color:var(--text-secondary);font-size:12px;margin-bottom:8px;">支持CSV/Excel，列顺序：<strong>学号,姓名,性别,族别,座位,职务,家长姓名,家长电话,住址,出生日期,兴趣爱好,特长,健康状况</strong>（表头自动识别）</p>
+        <textarea id="import-csv" rows="5" placeholder="粘贴CSV数据" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;padding:10px;"></textarea>
         <div class="form-row" style="margin-top:8px;"><input type="file" id="import-file" accept=".csv,.xlsx,.xls" style="flex:1;"></div>
         <div class="modal-actions"><button class="btn btn-outline" id="import-cancel">取消</button><button class="btn btn-primary" id="import-submit">导入</button></div></div>`;
       document.body.appendChild(modal);
@@ -869,7 +1049,8 @@
           else { const data = await file.arrayBuffer(); const wb = XLSX.read(data, { type: 'array' }); rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }); }
         } else { showToast('请输入数据或选择文件', 'error'); return; }
         if (rows.length === 0) { showToast('没有数据', 'error'); return; }
-        const headerKeywords = ['学号','姓名','性别','座位','职务','家长','电话','住址'];
+        // 智能识别表头
+        const headerKeywords = ['学号','姓名','性别','族别','民族','座位','职务','家长','电话','住址','出生','生日','兴趣','爱好','特长','健康'];
         let hasHeader = false;
         if (rows[0]) {
           hasHeader = rows[0].some(cell => headerKeywords.some(kw => String(cell).includes(kw)));
@@ -879,12 +1060,18 @@
           student_no: r[0] ? String(r[0]).trim() : null,
           name: String(r[1]).trim(),
           gender: r[2] ? String(r[2]).trim() : null,
-          seat: r[3] ? parseInt(r[3]) : null,
-          role: r[4] ? String(r[4]).trim() : null,
-          parent_name: r[5] ? String(r[5]).trim() : null,
-          parent_phone: r[6] ? String(r[6]).trim() : null,
-          address: r[7] ? String(r[7]).trim() : null,
-          class_id: AppState.currentProfile.class_id
+          ethnicity: r[3] ? String(r[3]).trim() : null,
+          seat: r[4] ? parseInt(r[4]) : null,
+          role: r[5] ? String(r[5]).trim() : null,
+          parent_name: r[6] ? String(r[6]).trim() : null,
+          parent_phone: r[7] ? String(r[7]).trim() : null,
+          address: r[8] ? String(r[8]).trim() : null,
+          birth_date: r[9] ? String(r[9]).trim() : null,
+          hobbies: r[10] ? String(r[10]).trim() : null,
+          specialty: r[11] ? String(r[11]).trim() : null,
+          health_status: r[12] ? String(r[12]).trim() : null,
+          class_id: AppState.currentProfile.class_id,
+          avatar_color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0')
         }));
         if (studentsToInsert.length === 0) { showToast('没有有效数据', 'error'); return; }
         const { error } = await supabase.from('students').insert(studentsToInsert);
@@ -894,7 +1081,7 @@
       });
     }
 
-    // ==================== 座次表（重做版，修复布局） ====================
+    // ==================== 座次表（显示职务） ====================
     function loadSeating() {
       const container = document.getElementById('page-seating');
       container.innerHTML = `
@@ -924,7 +1111,6 @@
       const maxSeat = 64;
       const seatMap = {};
       AppState.allStudents.forEach(s => { if (s.seat && s.seat <= 64) seatMap[s.seat] = s; });
-      // 每行8个座位，分4组，每组2个，组间有过道（用divider）
       let html = '<div class="seat-grid-wrapper">';
       for (let row = 0; row < 8; row++) {
         html += '<div class="seat-row">';
@@ -936,8 +1122,9 @@
             const student = seatMap[seatNum];
             const genderClass = student ? (student.gender === '男' ? 'male' : student.gender === '女' ? 'female' : '') : '';
             const genderIcon = student ? (student.gender === '男' ? '<i class="fa-solid fa-mars" style="color:#3b82f6;font-size:9px;"></i>' : student.gender === '女' ? '<i class="fa-solid fa-venus" style="color:#ec4899;font-size:9px;"></i>' : '') : '';
+            const roleText = student?.role ? `<div style="font-size:9px;color:var(--primary-light);">${escapeHtml(student.role)}</div>` : '';
             html += `<div class="seat-item ${student ? '' : 'empty'} ${genderClass}" data-seat="${seatNum}" data-student-id="${student?.id || ''}">
-              ${student ? `<div class="seat-name">${escapeHtml(student.name)}</div><div class="seat-number">座位${seatNum} ${genderIcon}</div>` : `<div class="seat-number">座位${seatNum}</div>`}
+              ${student ? `<div class="seat-name">${escapeHtml(student.name)}</div>${roleText}<div class="seat-number">座位${seatNum} ${genderIcon}</div>` : `<div class="seat-number">座位${seatNum}</div>`}
             </div>`;
           }
           html += '</div>';
@@ -975,7 +1162,7 @@
       const unseated = AppState.allStudents.filter(s => !s.seat || s.seat > 64);
       const container = document.getElementById('unseated-students');
       if (unseated.length === 0) { container.innerHTML = '<i class="fa-solid fa-chair"></i><p>暂无未就座学生</p>'; return; }
-      container.innerHTML = unseated.map(s => `<span style="display:inline-block;margin:4px;padding:4px 8px;background:rgba(255,255,255,0.05);border-radius:20px;">${escapeHtml(s.name)}</span>`).join('');
+      container.innerHTML = unseated.map(s => `<span style="display:inline-block;margin:4px;padding:4px 8px;background:rgba(255,255,255,0.05);border-radius:20px;">${escapeHtml(s.name)}${s.role ? ' ('+escapeHtml(s.role)+')' : ''}</span>`).join('');
     }
 
     function autoSeat() {
@@ -1071,7 +1258,7 @@
       });
     }
 
-    // ==================== 作业管理 ====================
+    // ==================== 作业管理（统计详情+学科修复+编辑放大） ====================
     let currentHomeworkSubject = '';
     let currentHomeworkWeek = 'all';
 
@@ -1080,10 +1267,10 @@
       container.innerHTML = `
         <div class="page-header"><h2>作业管理</h2><div class="breadcrumb">首页 / 作业管理</div></div>
         <div class="stats-grid">
-          <div class="stat-card"><div class="stat-icon"><i class="fa-solid fa-list"></i></div><div class="stat-info"><h4 id="hw-total">0</h4><p>总作业数</p></div></div>
-          <div class="stat-card"><div class="stat-icon green"><i class="fa-solid fa-calendar-week"></i></div><div class="stat-info"><h4 id="hw-week">0</h4><p>本周作业</p></div></div>
-          <div class="stat-card"><div class="stat-icon orange"><i class="fa-solid fa-percent"></i></div><div class="stat-info"><h4 id="hw-submit-rate">-</h4><p>平均提交率</p></div></div>
-          <div class="stat-card"><div class="stat-icon red"><i class="fa-solid fa-clock"></i></div><div class="stat-info"><h4 id="hw-missing">0</h4><p>累计未交人次</p></div></div>
+          <div class="stat-card" id="hw-total-card" style="cursor:pointer;"><div class="stat-icon"><i class="fa-solid fa-list"></i></div><div class="stat-info"><h4 id="hw-total">0</h4><p>总作业数</p></div></div>
+          <div class="stat-card" id="hw-week-card" style="cursor:pointer;"><div class="stat-icon green"><i class="fa-solid fa-calendar-week"></i></div><div class="stat-info"><h4 id="hw-week">0</h4><p>本周作业</p></div></div>
+          <div class="stat-card" id="hw-submit-rate-card" style="cursor:pointer;"><div class="stat-icon orange"><i class="fa-solid fa-percent"></i></div><div class="stat-info"><h4 id="hw-submit-rate">-</h4><p>平均提交率</p></div></div>
+          <div class="stat-card" id="hw-missing-card" style="cursor:pointer;"><div class="stat-icon red"><i class="fa-solid fa-clock"></i></div><div class="stat-info"><h4 id="hw-missing">0</h4><p>累计未交人次</p></div></div>
         </div>
         <div style="display:flex; gap:15px; flex-wrap:wrap;">
           <div style="flex:0 0 160px;">
@@ -1097,7 +1284,7 @@
               <div class="card-header">
                 <h3>作业列表</h3>
                 <div class="form-row">
-                  <select id="week-filter" style="max-width:160px;">
+                  <select id="week-filter" style="max-width:140px;">
                     <option value="all">全部周次</option>
                     <option value="current">本周</option>
                     <option value="last">上周</option>
@@ -1115,6 +1302,11 @@
         currentHomeworkWeek = e.target.value;
         renderHomeworkList();
       });
+      // 统计卡片点击事件
+      document.getElementById('hw-total-card').addEventListener('click', () => showHomeworkStats('total'));
+      document.getElementById('hw-week-card').addEventListener('click', () => showHomeworkStats('week'));
+      document.getElementById('hw-submit-rate-card').addEventListener('click', () => showHomeworkStats('rate'));
+      document.getElementById('hw-missing-card').addEventListener('click', () => showHomeworkStats('missing'));
       loadHomeworkData();
     }
 
@@ -1138,9 +1330,10 @@
         }
         const subjects = [...new Set(AppState.homeworkList.map(h => h.subject))];
         const subjectFilter = document.getElementById('subject-filter');
-        subjectFilter.innerHTML = `<div class="nav-item ${currentHomeworkSubject === '' ? 'active' : ''}" data-subject=""><i class="fa-solid fa-list"></i><span>全部</span></div>`;
+        subjectFilter.innerHTML = `<div class="nav-item ${currentHomeworkSubject === '' ? 'active' : ''}" data-subject=""><i class="fa-solid fa-list"></i><span>全部 (${AppState.homeworkList.length})</span></div>`;
         subjects.forEach(sub => {
-          subjectFilter.innerHTML += `<div class="nav-item ${currentHomeworkSubject === sub ? 'active' : ''}" data-subject="${escapeHtml(sub)}"><i class="fa-solid fa-book"></i><span>${escapeHtml(sub)}</span></div>`;
+          const count = AppState.homeworkList.filter(h => h.subject === sub).length;
+          subjectFilter.innerHTML += `<div class="nav-item ${currentHomeworkSubject === sub ? 'active' : ''}" data-subject="${escapeHtml(sub)}"><i class="fa-solid fa-book"></i><span>${escapeHtml(sub)} (${count})</span></div>`;
         });
         subjectFilter.querySelectorAll('.nav-item').forEach(el => el.addEventListener('click', () => {
           currentHomeworkSubject = el.dataset.subject;
@@ -1183,12 +1376,14 @@
     function openHomeworkModal(homeworkId = null) {
       const hw = homeworkId ? AppState.homeworkList.find(h => h.id == homeworkId) : null;
       const modal = document.createElement('div'); modal.className = 'modal-overlay';
-      modal.innerHTML = `<div class="modal-content"><h3>${hw ? '编辑作业' : '布置作业'}</h3>
+      modal.innerHTML = `<div class="modal-content" style="max-width:750px;"><h3>${hw ? '编辑作业' : '布置作业'}</h3>
         <div class="form-row" style="flex-direction:column;gap:8px;">
-          <input type="text" id="hw-subject" placeholder="科目" value="${hw?.subject || ''}">
-          <input type="text" id="hw-title" placeholder="作业标题" value="${hw?.title || ''}">
-          <textarea id="hw-description" placeholder="作业描述" rows="2">${hw?.description || ''}</textarea>
-          <input type="date" id="hw-deadline" value="${hw?.deadline || ''}">
+          <div class="form-row">
+            <div style="flex:1;"><label style="font-size:11px;color:var(--text-secondary);"><i class="fa-solid fa-book"></i> 科目</label><input type="text" id="hw-subject" value="${hw?.subject || ''}" placeholder="科目" style="width:100%;"></div>
+            <div style="flex:2;"><label style="font-size:11px;color:var(--text-secondary);"><i class="fa-solid fa-pen"></i> 标题</label><input type="text" id="hw-title" value="${hw?.title || ''}" placeholder="作业标题" style="width:100%;"></div>
+          </div>
+          <div><label style="font-size:11px;color:var(--text-secondary);"><i class="fa-solid fa-align-left"></i> 描述</label><textarea id="hw-description" rows="3" placeholder="作业描述" style="width:100%;padding:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;">${hw?.description || ''}</textarea></div>
+          <div><label style="font-size:11px;color:var(--text-secondary);"><i class="fa-solid fa-calendar"></i> 截止日期</label><input type="date" id="hw-deadline" value="${hw?.deadline || ''}" style="width:100%;padding:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;"></div>
         </div>
         <div class="modal-actions"><button class="btn btn-outline" id="hw-cancel">取消</button><button class="btn btn-primary" id="hw-save">保存</button></div></div>`;
       document.body.appendChild(modal);
@@ -1209,7 +1404,7 @@
       const hw = AppState.homeworkList.find(h => h.id == homeworkId);
       if (!hw) return;
       const modal = document.createElement('div'); modal.className = 'modal-overlay';
-      modal.innerHTML = `<div class="modal-content" style="max-width:650px;"><h3>${escapeHtml(hw.subject)}：${escapeHtml(hw.title)}</h3>
+      modal.innerHTML = `<div class="modal-content" style="max-width:700px;"><h3>${escapeHtml(hw.subject)}：${escapeHtml(hw.title)}</h3>
         <p style="color:var(--text-secondary);font-size:12px;margin-bottom:10px;">${escapeHtml(hw.description || '无描述')} | 截止：${hw.deadline || '无'}</p>
         <div id="submission-detail">加载中...</div>
         <div class="modal-actions"><button class="btn btn-outline" id="detail-close">关闭</button><button class="btn btn-primary" id="edit-hw-btn">编辑</button></div></div>`;
@@ -1228,7 +1423,54 @@
         }));
       });
     }
-    // ==================== 成绩管理 ====================
+
+    function showHomeworkStats(type) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content" style="max-width:750px;"><h3>作业统计详情</h3><div id="homework-stats-content">加载中...</div><div class="modal-actions"><button class="btn btn-outline" id="stats-close">关闭</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('stats-close').addEventListener('click', () => modal.remove());
+      const container = modal.querySelector('#homework-stats-content');
+      // 根据类型加载不同数据
+      if (type === 'total') {
+        container.innerHTML = `<div class="table-responsive"><table><thead><tr><th>科目</th><th>标题</th><th>布置日期</th><th>截止日期</th></tr></thead><tbody>${AppState.homeworkList.map(h => `<tr><td>${escapeHtml(h.subject)}</td><td>${escapeHtml(h.title)}</td><td>${h.assigned_date || '-'}</td><td>${h.deadline || '-'}</td></tr>`).join('')}</tbody></table></div>`;
+      } else if (type === 'week') {
+        const now = new Date(); const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay() + 1);
+        const weekList = AppState.homeworkList.filter(h => new Date(h.assigned_date) >= weekStart);
+        container.innerHTML = `<div class="table-responsive"><table><thead><tr><th>科目</th><th>标题</th><th>布置日期</th></tr></thead><tbody>${weekList.map(h => `<tr><td>${escapeHtml(h.subject)}</td><td>${escapeHtml(h.title)}</td><td>${h.assigned_date || '-'}</td></tr>`).join('')}</tbody></table></div>`;
+      } else if (type === 'rate') {
+        container.innerHTML = '平均提交率详情：<br>';
+        // 计算每个作业提交率
+        AppState.homeworkList.forEach(hw => {
+          supabase.from('homework_submissions').select('status').eq('homework_id', hw.id).then(({ data: subs }) => {
+            if (subs && subs.length > 0) {
+              const submitted = subs.filter(s => s.status === 'submitted' || s.status === 'late').length;
+              container.innerHTML += `<p>${escapeHtml(hw.subject)} - ${escapeHtml(hw.title)}: ${Math.round((submitted/subs.length)*100)}%</p>`;
+            }
+          });
+        });
+      } else if (type === 'missing') {
+        // 查询所有未交记录
+        const homeworkIds = AppState.homeworkList.map(h => h.id);
+        if (homeworkIds.length === 0) { container.innerHTML = '暂无数据'; return; }
+        supabase.from('homework_submissions').select('*, students(name), homework(subject, title)').eq('status', 'missing').in('homework_id', homeworkIds).then(({ data }) => {
+          if (!data || data.length === 0) { container.innerHTML = '暂无未交记录'; return; }
+          container.innerHTML = `<div class="table-responsive"><table><thead><tr><th>学生</th><th>科目</th><th>作业标题</th><th>未交次数</th></tr></thead><tbody>`;
+          // 统计每个学生未交次数
+          const studentMissing = {};
+          data.forEach(s => {
+            const key = s.student_id;
+            if (!studentMissing[key]) studentMissing[key] = { name: s.students?.name, count: 0, subjects: [] };
+            studentMissing[key].count++;
+            studentMissing[key].subjects.push(`${s.homework?.subject}:${s.homework?.title}`);
+          });
+          Object.values(studentMissing).forEach(sm => {
+            container.innerHTML += `<tr><td>${escapeHtml(sm.name)}</td><td>${escapeHtml(sm.subjects.join('、'))}</td><td>${escapeHtml(sm.subjects.join('、'))}</td><td>${sm.count}</td></tr>`;
+          });
+          container.innerHTML += '</tbody></table></div>';
+        });
+      }
+    }
+    // ==================== 成绩管理（重构版） ====================
     function loadGrades() {
       const container = document.getElementById('page-grades');
       container.innerHTML = `
@@ -1334,10 +1576,10 @@
         grades.forEach(g => gradeMap[`${g.student_id}_${g.subject}`] = g.score);
         const subjects = ['语文','数学','英语','物理','化学','生物','政治','历史','地理'];
         const area = document.createElement('div'); area.className = 'modal-overlay';
-        area.innerHTML = `<div class="modal-content" style="max-width:850px;"><h3>成绩录入与查看</h3>
+        area.innerHTML = `<div class="modal-content" style="max-width:900px;"><h3>成绩录入与查看</h3>
           <div class="form-row" style="margin-bottom:10px;">
-            <button class="btn btn-outline btn-sm" id="view-stats-btn">统计图表</button>
-            <button class="btn btn-primary btn-sm" id="grade-save-btn">保存成绩</button>
+            <button class="btn btn-outline btn-sm" id="view-stats-btn"><i class="fa-solid fa-chart-simple"></i> 统计图表</button>
+            <button class="btn btn-primary btn-sm" id="grade-save-btn"><i class="fa-solid fa-save"></i> 保存成绩</button>
           </div>
           <div class="table-responsive" style="max-height:400px;overflow-y:auto;"><table><thead><tr><th>姓名</th>${subjects.map(s => `<th>${s}</th>`).join('')}<th>总分</th></tr></thead><tbody>${students.map(stu => {
             let total = 0;
@@ -1370,20 +1612,23 @@
 
     function showGradeStats(examId, students, gradeMap) {
       const modal = document.createElement('div'); modal.className = 'modal-overlay';
-      modal.innerHTML = `<div class="modal-content" style="max-width:700px;"><h3>成绩统计</h3><div id="stats-content">加载中...</div><div class="modal-actions"><button class="btn btn-outline" id="stats-close">关闭</button></div></div>`;
+      modal.innerHTML = `<div class="modal-content" style="max-width:750px;"><h3>成绩统计</h3><div id="stats-content">加载中...</div><div class="modal-actions"><button class="btn btn-outline" id="stats-close">关闭</button></div></div>`;
       document.body.appendChild(modal);
       document.getElementById('stats-close').addEventListener('click', () => modal.remove());
       const container = modal.querySelector('#stats-content');
       const subjects = ['语文','数学','英语','物理','化学','生物','政治','历史','地理'];
-      let html = '';
+      let html = '<div class="table-responsive"><table><thead><tr><th>科目</th><th>平均分</th><th>及格率</th><th>优秀率</th></tr></thead><tbody>';
       subjects.forEach(sub => {
-        const scores = students.map(s => parseFloat(gradeMap[`${s.id}_${sub}`] || '0')).filter(v => !isNaN(v));
+        const scores = students.map(s => parseFloat(gradeMap[`${s.id}_${sub}`] || '0')).filter(v => !isNaN(v) && v > 0);
         if (scores.length > 0) {
           const avg = (scores.reduce((a,b) => a+b, 0) / scores.length).toFixed(1);
-          html += `<p>${sub} 平均分：${avg}</p>`;
+          const passRate = Math.round((scores.filter(v => v >= 60).length / scores.length) * 100);
+          const excellentRate = Math.round((scores.filter(v => v >= 85).length / scores.length) * 100);
+          html += `<tr><td>${sub}</td><td>${avg}</td><td>${passRate}%</td><td>${excellentRate}%</td></tr>`;
         }
       });
-      container.innerHTML = html || '暂无数据';
+      html += '</tbody></table></div>';
+      container.innerHTML = html;
     }
 
     function deleteExam(examId) {
@@ -1436,7 +1681,7 @@
       });
     }
 
-    // ==================== 课程表（重做版） ====================
+    // ==================== 课程表（详细编辑+时段设置） ====================
     const SUBJECT_COLORS = {
       '语文': '#ef4444', '数学': '#3b82f6', '英语': '#10b981', '物理': '#f59e0b',
       '化学': '#8b5cf6', '生物': '#06b6d4', '政治': '#eab308', '历史': '#a16207',
@@ -1459,6 +1704,7 @@
               <button class="btn btn-primary btn-sm" id="edit-schedule-btn"><i class="fa-solid fa-edit"></i> 编辑课程</button>
               <button class="btn btn-outline btn-sm" id="import-schedule-btn"><i class="fa-solid fa-file-import"></i> 导入</button>
               <button class="btn btn-outline btn-sm" id="ai-schedule-btn"><i class="fa-solid fa-robot"></i> AI排课建议</button>
+              <button class="btn btn-outline btn-sm" id="period-time-settings-btn"><i class="fa-solid fa-clock"></i> 时段设置</button>
             </div>
           </div>
           <div class="table-responsive"><table id="schedule-table"></table></div>
@@ -1470,6 +1716,19 @@
       document.getElementById('edit-schedule-btn').addEventListener('click', () => openScheduleEditor());
       document.getElementById('import-schedule-btn').addEventListener('click', openScheduleImportModal);
       document.getElementById('ai-schedule-btn').addEventListener('click', aiScheduleSuggest);
+      document.getElementById('period-time-settings-btn').addEventListener('click', openPeriodTimeSettings);
+    }
+
+    function getPeriodTime(period) {
+      // 从设置中获取自定义时段，否则使用默认
+      if (AppState.periodTimes && AppState.periodTimes[period]) {
+        return AppState.periodTimes[period];
+      }
+      const times = {
+        1: '8:00-8:45', 2: '8:55-9:40', 3: '9:50-10:35', 4: '10:45-11:30',
+        5: '14:00-14:45', 6: '14:55-15:40', 7: '15:50-16:35', 8: '16:45-17:30'
+      };
+      return times[period] || '';
     }
 
     function loadScheduleData() {
@@ -1519,14 +1778,6 @@
       });
     }
 
-    function getPeriodTime(period) {
-      const times = {
-        1: '8:00-8:45', 2: '8:55-9:40', 3: '9:50-10:35', 4: '10:45-11:30',
-        5: '14:00-14:45', 6: '14:55-15:40', 7: '15:50-16:35', 8: '16:45-17:30'
-      };
-      return times[period] || '';
-    }
-
     function openScheduleEditor(slotId = null) {
       const modal = document.createElement('div'); modal.className = 'modal-overlay';
       modal.innerHTML = `<div class="modal-content"><h3>编辑课程</h3>
@@ -1537,7 +1788,7 @@
           <input type="text" id="edit-teacher" placeholder="任课教师">
           <select id="edit-week-type"><option value="both">单双周通用</option><option value="single">单周</option><option value="double">双周</option></select>
         </div>
-        <div class="modal-actions"><button class="btn btn-outline" id="edit-cancel">取消</button><button class="btn btn-primary" id="edit-save">保存</button></div></div>`;
+        <div class="modal-actions"><button class="btn btn-outline" id="edit-cancel">取消</button><button class="btn btn-primary" id="edit-save">保存</button>${slotId ? '<button class="btn btn-danger" id="edit-delete">删除</button>' : ''}</div></div>`;
       document.body.appendChild(modal);
       if (slotId) {
         supabase.from('schedule').select('*').eq('id', slotId).single().then(({ data }) => {
@@ -1565,6 +1816,14 @@
         }
         modal.remove(); showToast('课程已更新', 'success'); loadScheduleData();
       });
+      if (slotId) {
+        document.getElementById('edit-delete').addEventListener('click', async () => {
+          if (confirm('确定删除该课程？')) {
+            await supabase.from('schedule').delete().eq('id', slotId);
+            modal.remove(); showToast('课程已删除', 'success'); loadScheduleData();
+          }
+        });
+      }
     }
 
     function openScheduleImportModal() {
@@ -1617,20 +1876,43 @@
       }
     }
 
-    // ==================== 考勤管理 ====================
+    function openPeriodTimeSettings() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      let html = '<div class="modal-content"><h3>课程时段设置</h3><div class="form-row" style="flex-direction:column;gap:8px;">';
+      for (let i = 1; i <= 8; i++) {
+        const current = getPeriodTime(i);
+        html += `<div class="form-row"><label style="width:60px;font-size:12px;">第${i}节</label><input type="text" id="period-time-${i}" value="${current}" style="flex:1;"></div>`;
+      }
+      html += '</div><div class="modal-actions"><button class="btn btn-outline" id="pt-cancel">取消</button><button class="btn btn-primary" id="pt-save">保存</button></div></div>';
+      modal.innerHTML = html;
+      document.body.appendChild(modal);
+      document.getElementById('pt-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('pt-save').addEventListener('click', async () => {
+        const times = {};
+        for (let i = 1; i <= 8; i++) {
+          times[i] = document.getElementById(`period-time-${i}`).value.trim();
+        }
+        AppState.periodTimes = times;
+        // 保存到 settings 表
+        await supabase.from('settings').upsert({ class_id: AppState.currentProfile.class_id, period_times: times }, { onConflict: 'class_id' });
+        modal.remove(); showToast('时段设置已保存', 'success'); loadScheduleData();
+      });
+    }
+
+    // ==================== 考勤管理（增强版） ====================
     function loadAttendance() {
       const container = document.getElementById('page-attendance');
       container.innerHTML = `
         <div class="page-header"><h2>考勤管理</h2><div class="breadcrumb">首页 / 考勤管理</div></div>
         <div class="stats-grid">
-          <div class="stat-card"><div class="stat-icon"><i class="fa-solid fa-calendar-check"></i></div><div class="stat-info"><h4 id="att-today-rate">-</h4><p>今日出勤率</p></div></div>
-          <div class="stat-card"><div class="stat-icon green"><i class="fa-solid fa-user-clock"></i></div><div class="stat-info"><h4 id="att-month-rate">-</h4><p>本月出勤率</p></div></div>
-          <div class="stat-card"><div class="stat-icon orange"><i class="fa-solid fa-user-xmark"></i></div><div class="stat-info"><h4 id="att-absent-count">0</h4><p>本月缺勤</p></div></div>
-          <div class="stat-card"><div class="stat-icon red"><i class="fa-solid fa-file-medical"></i></div><div class="stat-info"><h4 id="att-leave-count">0</h4><p>本月请假</p></div></div>
+          <div class="stat-card" id="att-today-card" style="cursor:pointer;"><div class="stat-icon"><i class="fa-solid fa-calendar-check"></i></div><div class="stat-info"><h4 id="att-today-rate">-</h4><p>今日出勤率</p></div></div>
+          <div class="stat-card" id="att-month-card" style="cursor:pointer;"><div class="stat-icon green"><i class="fa-solid fa-user-clock"></i></div><div class="stat-info"><h4 id="att-month-rate">-</h4><p>本月出勤率</p></div></div>
+          <div class="stat-card" id="att-absent-card" style="cursor:pointer;"><div class="stat-icon orange"><i class="fa-solid fa-user-xmark"></i></div><div class="stat-info"><h4 id="att-absent-count">0</h4><p>本月缺勤</p></div></div>
+          <div class="stat-card" id="att-leave-card" style="cursor:pointer;"><div class="stat-icon red"><i class="fa-solid fa-file-medical"></i></div><div class="stat-info"><h4 id="att-leave-count">0</h4><p>本月请假</p></div></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
           <div class="card">
-            <div class="card-header"><h3>每日考勤</h3><div class="form-row"><input type="date" id="attendance-date" style="max-width:140px;"><button class="btn btn-primary btn-sm" id="load-attendance-btn">加载</button><button class="btn btn-success btn-sm" id="save-attendance-btn">保存</button></div></div>
+            <div class="card-header"><h3>每日考勤</h3><div class="form-row"><input type="date" id="attendance-date" style="max-width:140px;"><button class="btn btn-primary btn-sm" id="load-attendance-btn">加载</button><button class="btn btn-success btn-sm" id="save-attendance-btn">保存</button><button class="btn btn-outline btn-sm" id="all-present-btn">全选出勤</button></div></div>
             <div class="table-responsive" style="max-height:400px;overflow-y:auto;"><table><thead><tr><th>姓名</th><th>状态</th></tr></thead><tbody id="attendance-tbody"></tbody></table></div>
           </div>
           <div class="card">
@@ -1647,6 +1929,14 @@
       document.getElementById('load-attendance-btn').addEventListener('click', loadAttendanceData);
       document.getElementById('save-attendance-btn').addEventListener('click', saveAttendance);
       document.getElementById('add-leave-btn').addEventListener('click', openLeaveModal);
+      document.getElementById('all-present-btn').addEventListener('click', () => {
+        document.querySelectorAll('.att-status-select').forEach(sel => sel.value = 'present');
+      });
+      // 统计卡片点击
+      document.getElementById('att-today-card').addEventListener('click', () => showAttStats('today'));
+      document.getElementById('att-month-card').addEventListener('click', () => showAttStats('month'));
+      document.getElementById('att-absent-card').addEventListener('click', () => showAttStats('absent'));
+      document.getElementById('att-leave-card').addEventListener('click', () => showAttStats('leave'));
     }
 
     function loadAttendanceData() {
@@ -1713,11 +2003,15 @@
         tbody.innerHTML = '';
         (data || []).forEach(l => {
           const tr = document.createElement('tr');
-          tr.innerHTML = `<td>${escapeHtml(l.students?.name || '未知')}</td><td>${l.date}</td><td><span class="badge ${l.status === 'approved' ? 'badge-success' : l.status === 'rejected' ? 'badge-danger' : 'badge-warning'}">${l.status === 'pending' ? '待审批' : l.status === 'approved' ? '已批准' : '已拒绝'}</span></td><td>${l.status === 'pending' ? `<button class="btn btn-sm btn-success approve-leave" data-id="${l.id}">批</button> <button class="btn btn-sm btn-danger reject-leave" data-id="${l.id}">拒</button>` : '-'}</td>`;
+          tr.innerHTML = `<td><a href="#" class="leave-student-link" data-id="${l.student_id}">${escapeHtml(l.students?.name || '未知')}</a></td><td>${l.date}</td><td><span class="badge ${l.status === 'approved' ? 'badge-success' : l.status === 'rejected' ? 'badge-danger' : 'badge-warning'}">${l.status === 'pending' ? '待审批' : l.status === 'approved' ? '已批准' : '已拒绝'}</span></td><td>${l.status === 'pending' ? `<button class="btn btn-sm btn-success approve-leave" data-id="${l.id}">批</button> <button class="btn btn-sm btn-danger reject-leave" data-id="${l.id}">拒</button>` : '-'}</td>`;
           tbody.appendChild(tr);
         });
         tbody.querySelectorAll('.approve-leave').forEach(btn => btn.addEventListener('click', () => updateLeaveStatus(btn.dataset.id, 'approved')));
         tbody.querySelectorAll('.reject-leave').forEach(btn => btn.addEventListener('click', () => updateLeaveStatus(btn.dataset.id, 'rejected')));
+        tbody.querySelectorAll('.leave-student-link').forEach(a => a.addEventListener('click', (e) => {
+          e.preventDefault();
+          switchPageWithStudent('analysis', a.dataset.id);
+        }));
       });
     }
 
@@ -1740,7 +2034,56 @@
       });
     }
 
-    // ==================== 期末评语（AI + 头像墙） ====================
+    function showAttStats(type) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content" style="max-width:750px;"><h3>考勤统计详情</h3><div id="att-stats-content">加载中...</div><div class="modal-actions"><button class="btn btn-outline" id="att-stats-close">关闭</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('att-stats-close').addEventListener('click', () => modal.remove());
+      const container = modal.querySelector('#att-stats-content');
+      if (type === 'today') {
+        const today = new Date().toISOString().split('T')[0];
+        supabase.from('attendance').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).eq('date', today).then(({ data }) => {
+          if (!data || data.length === 0) { container.innerHTML = '暂无考勤记录'; return; }
+          const statusMap = { present: '出勤', late: '迟到', absent: '缺勤', leave: '请假' };
+          container.innerHTML = `<div class="table-responsive"><table><thead><tr><th>学生</th><th>状态</th></tr></thead><tbody>${data.map(a => `<tr><td>${escapeHtml(a.students?.name || '')}</td><td>${statusMap[a.status]}</td></tr>`).join('')}</tbody></table></div>`;
+        });
+      } else if (type === 'month') {
+        const monthStart = new Date(); monthStart.setDate(1); const monthStartStr = monthStart.toISOString().split('T')[0];
+        supabase.from('attendance').select('date, status').eq('class_id', AppState.currentProfile.class_id).gte('date', monthStartStr).then(({ data }) => {
+          if (!data || data.length === 0) { container.innerHTML = '暂无记录'; return; }
+          const grouped = {};
+          data.forEach(d => {
+            if (!grouped[d.date]) grouped[d.date] = { present: 0, late: 0, absent: 0, leave: 0, total: 0 };
+            grouped[d.date][d.status]++;
+            grouped[d.date].total++;
+          });
+          const dates = Object.keys(grouped).sort();
+          const ctx = document.createElement('canvas');
+          container.innerHTML = '';
+          container.appendChild(ctx);
+          new Chart(ctx, {
+            type: 'line',
+            data: { labels: dates, datasets: [{ label: '出勤率(%)', data: dates.map(d => Math.round((grouped[d].present + grouped[d].late) / grouped[d].total * 100)), borderColor: '#10b981' }] },
+            options: { responsive: true, scales: { y: { beginAtZero: true, max: 100 } } }
+          });
+        });
+      } else if (type === 'absent') {
+        const monthStart = new Date(); monthStart.setDate(1); const monthStartStr = monthStart.toISOString().split('T')[0];
+        supabase.from('attendance').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).gte('date', monthStartStr).eq('status', 'absent').then(({ data }) => {
+          if (!data || data.length === 0) { container.innerHTML = '本月无缺勤记录'; return; }
+          const studentMap = {};
+          data.forEach(a => { if (!studentMap[a.student_id]) studentMap[a.student_id] = { name: a.students?.name, count: 0, dates: [] }; studentMap[a.student_id].count++; studentMap[a.student_id].dates.push(a.date); });
+          container.innerHTML = `<div class="table-responsive"><table><thead><tr><th>学生</th><th>缺勤次数</th><th>日期</th></tr></thead><tbody>${Object.values(studentMap).map(s => `<tr><td>${escapeHtml(s.name)}</td><td>${s.count}</td><td>${s.dates.join(', ')}</td></tr>`).join('')}</tbody></table></div>`;
+        });
+      } else if (type === 'leave') {
+        supabase.from('leaves').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).then(({ data }) => {
+          if (!data || data.length === 0) { container.innerHTML = '暂无请假记录'; return; }
+          container.innerHTML = `<div class="table-responsive"><table><thead><tr><th>学生</th><th>日期</th><th>原因</th><th>状态</th></tr></thead><tbody>${data.map(l => `<tr><td>${escapeHtml(l.students?.name || '')}</td><td>${l.date}</td><td>${escapeHtml(l.reason || '-')}</td><td>${l.status === 'approved' ? '已批准' : l.status === 'rejected' ? '已拒绝' : '待审批'}</td></tr>`).join('')}</tbody></table></div>`;
+        });
+      }
+    }
+
+    // ==================== 期末评语（头像墙 + AI） ====================
     function loadComments() {
       const container = document.getElementById('page-comments');
       container.innerHTML = `
@@ -1748,6 +2091,7 @@
         <div class="card">
           <div class="card-header"><h3>生成评语</h3><div class="form-row">
             <select id="comment-mode" style="max-width:160px;"><option value="local">本地模板</option><option value="ai">AI智能生成</option></select>
+            <select id="comment-style" style="max-width:160px;"><option value="encouraging">鼓励型</option><option value="suggestive">建议型</option><option value="humorous">幽默型</option></select>
             <button class="btn btn-primary btn-sm" id="generate-comments-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> 生成</button>
             <button class="btn btn-outline btn-sm" id="copy-comments-btn"><i class="fa-solid fa-copy"></i> 复制全部</button>
           </div></div>
@@ -1767,7 +2111,7 @@
       if (AppState.allStudents.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fa-solid fa-users"></i><p>暂无学生</p></div>'; return; }
       const colors = ['#6d5dfc','#10b981','#f59e0b','#ef4444','#3b82f6','#ec4899','#8b5cf6','#06b6d4'];
       container.innerHTML = AppState.allStudents.map((s, idx) => {
-        const color = colors[idx % colors.length];
+        const color = s.avatar_color || colors[idx % colors.length];
         return `<div class="avatar-item" data-student-id="${s.id}">
           <div class="avatar-circle" style="background:${color};">${escapeHtml(s.name.charAt(0))}</div>
           <span>${escapeHtml(s.name)}</span>
@@ -1797,23 +2141,26 @@
 
     async function generateComments() {
       const mode = document.getElementById('comment-mode').value;
+      const style = document.getElementById('comment-style').value;
       if (AppState.allStudents.length === 0) { showToast('没有学生', 'error'); return; }
       if (mode === 'local') {
-        const templates = ['学习认真，成绩稳定。','乐于助人，团结同学。','课堂表现积极，思维活跃。','作业完成及时，质量较高。','遵守纪律，尊敬师长。'];
-        AppState.commentList = AppState.allStudents.map(s => ({ student: s.name, comment: `${s.name}同学，${templates[Math.floor(Math.random()*templates.length)]}` }));
+        const templates = {
+          encouraging: ['学习认真，成绩稳定。继续保持！','乐于助人，团结同学，是班级的榜样。','课堂表现积极，思维活跃，值得表扬。'],
+          suggestive: ['建议加强语文阅读，提升理解能力。','数学基础不错，但需要多练习应用题。','英语听说能力有待提高，建议每天坚持朗读。'],
+          humorous: ['你是班级的开心果，但学习也要跟上哦。','脑袋很聪明，就是偶尔偷懒，加油！','作业总是“明天交”，明天已经堆积如山啦。']
+        };
+        const tplList = templates[style] || templates.encouraging;
+        AppState.commentList = AppState.allStudents.map(s => ({ student: s.name, comment: `${s.name}同学，${tplList[Math.floor(Math.random()*tplList.length)]}` }));
         AppState.allStudents.forEach(s => {
           const comment = AppState.commentList.find(c => c.student === s.name)?.comment || '';
           supabase.from('ai_reports').upsert({ class_id: AppState.currentProfile.class_id, student_id: s.id, type: 'comment', content: comment });
         });
         showToast('已生成本地评语', 'success');
+        renderAvatarWall();
       } else {
         showToast('正在调用AI生成，请稍候...', 'warning');
         const results = await Promise.all(AppState.allStudents.map(async (s) => {
-          const payload = {
-            name: s.name,
-            gender: s.gender,
-            role: s.role,
-          };
+          const payload = { name: s.name, gender: s.gender, role: s.role, style };
           const content = await callAI('comment', payload);
           if (content) {
             await supabase.from('ai_reports').upsert({ class_id: AppState.currentProfile.class_id, student_id: s.id, type: 'comment', content });
@@ -1822,8 +2169,8 @@
         }));
         AppState.commentList = results;
         showToast('AI评语生成完成', 'success');
+        renderAvatarWall();
       }
-      renderAvatarWall();
     }
 
     function copyComments() {
@@ -1840,6 +2187,7 @@
         <div class="card"><div class="form-row">
           <select id="analysis-student-select" style="max-width:250px;"><option value="">请选择学生</option>${AppState.allStudents.map(s => `<option value="${s.id}" ${AppState.selectedStudentId == s.id ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}</select>
           <button class="btn btn-primary btn-sm" id="ai-analysis-btn"><i class="fa-solid fa-robot"></i> AI深度分析</button>
+          <button class="btn btn-outline btn-sm" id="view-grades-btn"><i class="fa-solid fa-chart-bar"></i> 查看成绩</button>
         </div></div>
         <div id="analysis-content" class="empty-state"><i class="fa-solid fa-user-graduate"></i><p>请选择学生</p></div>`;
       if (AppState.selectedStudentId) {
@@ -1853,6 +2201,10 @@
       });
       document.getElementById('ai-analysis-btn').addEventListener('click', () => {
         if (AppState.selectedStudentId) generateAIAnalysis(AppState.selectedStudentId);
+        else showToast('请先选择学生', 'error');
+      });
+      document.getElementById('view-grades-btn').addEventListener('click', () => {
+        if (AppState.selectedStudentId) switchPageWithStudent('grades', AppState.selectedStudentId);
         else showToast('请先选择学生', 'error');
       });
     }
@@ -1873,12 +2225,12 @@
         const aiReport = aiReportRes.data;
         let html = '';
         const colors = ['#6d5dfc','#10b981','#f59e0b','#ef4444','#3b82f6','#ec4899','#8b5cf6','#06b6d4'];
-        const color = colors[Math.floor(Math.random()*colors.length)];
+        const color = student.avatar_color || colors[Math.floor(Math.random()*colors.length)];
         html += `<div class="card" style="display:flex;align-items:center;gap:15px;">
           <div class="avatar-circle" style="background:${color};width:60px;height:60px;font-size:24px;">${escapeHtml(student.name.charAt(0))}</div>
           <div style="flex:1;">
             <h3 style="color:#fff;">${escapeHtml(student.name)}</h3>
-            <p style="color:var(--text-secondary);font-size:12px;">学号: ${escapeHtml(student.student_no||'-')} | 性别: ${escapeHtml(student.gender||'-')} | 座位: ${student.seat||'-'} | 职务: ${escapeHtml(student.role||'-')}</p>
+            <p style="color:var(--text-secondary);font-size:12px;">学号: ${escapeHtml(student.student_no||'-')} | 性别: ${escapeHtml(student.gender||'-')} | 族别: ${escapeHtml(student.ethnicity||'-')} | 座位: ${student.seat||'-'} | 职务: ${escapeHtml(student.role||'-')}</p>
           </div>
           <span class="badge badge-info">综合等级: 待评估</span>
         </div>`;
@@ -1976,7 +2328,7 @@
       });
     }
 
-    // ==================== 家校沟通（卡片+详情） ====================
+    // ==================== 家校沟通 ====================
     function loadCommunication() {
       const container = document.getElementById('page-communication');
       container.innerHTML = `
@@ -2335,6 +2687,32 @@
           showToast('状态已更新', 'success'); loadUsers();
         }));
       });
+    }
+
+    // ==================== Banner 信息 ====================
+    async function loadBannerInfo() {
+      const infoDiv = document.getElementById('banner-date-info');
+      const today = new Date();
+      const dateStr = `${today.getFullYear()}年${today.getMonth()+1}月${today.getDate()}日 星期${'日一二三四五六'[today.getDay()]}`;
+      let schoolStart = AppState.schoolStartDate || '2026-09-01';
+      const startDate = new Date(schoolStart);
+      const diffDays = Math.ceil((startDate - today) / (24*60*60*1000));
+      let daysText = '';
+      if (diffDays > 0) daysText = `距开学还有 ${diffDays} 天`;
+      else if (diffDays === 0) daysText = '今天开学！';
+      else daysText = `已开学 ${Math.abs(diffDays)} 天`;
+      const quotes = [
+        '教育不是灌满一桶水，而是点燃一把火。 —— 叶芝',
+        '学而不思则罔，思而不学则殆。 —— 孔子',
+        '教育是改变世界最强大的武器。 —— 曼德拉',
+        'The best way to predict the future is to create it. —— Peter Drucker',
+        '千里之行，始于足下。 —— 老子',
+        '兴趣是最好的老师。 —— 爱因斯坦',
+        '教育的目的在于让人能够继续教育自己。 —— 杜威',
+        '授人以鱼不如授人以渔。 —— 谚语'
+      ];
+      const quote = quotes[Math.floor(Math.random() * quotes.length)];
+      infoDiv.innerHTML = `${dateStr}<br>${daysText}<br><em>${quote}</em>`;
     }
   </script>
 </body>
