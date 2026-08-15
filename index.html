@@ -1,0 +1,2341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WORKBUDDY PRO · 班级管理系统</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --primary: #6d5dfc; --primary-light: #8a7fff; --primary-dark: #4f3df0;
+      --secondary: #00d4ff; --bg-base: #0f172a; --bg-card: rgba(255,255,255,0.06);
+      --bg-card-hover: rgba(255,255,255,0.1); --text-main: #e2e8f0; --text-secondary: #94a3b8;
+      --border-glow: rgba(109,93,252,0.4); --success: #10b981; --danger: #ef4444; --warning: #f59e0b;
+      --radius: 16px; --shadow: 0 8px 32px rgba(0,0,0,0.3); --transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter','Segoe UI',system-ui,sans-serif; background: var(--bg-base); color: var(--text-main); line-height: 1.6; min-height: 100vh; overflow-x: hidden; }
+    button { cursor: pointer; font-family: inherit; }
+    input, select, textarea { font-family: inherit; }
+    body::before { content:''; position:fixed; top:0; left:0; width:100%; height:100%; background-image: radial-gradient(circle at 20% 50%, rgba(109,93,252,0.15) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(0,212,255,0.1) 0%, transparent 50%), radial-gradient(circle at 50% 100%, rgba(255,255,255,0.05) 0%, transparent 50%); pointer-events:none; z-index:-2; }
+    body::after { content:''; position:fixed; top:0; left:0; width:100%; height:100%; background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px); background-size:40px 40px; pointer-events:none; z-index:-1; }
+    #auth-container { display:flex; justify-content:center; align-items:center; min-height:100vh; background: radial-gradient(ellipse at center, #1e1b4b 0%, #0f172a 100%); position:relative; z-index:1; }
+    .auth-card { background:var(--bg-card); backdrop-filter:blur(20px); border:1px solid var(--border-glow); border-radius:20px; box-shadow:var(--shadow),0 0 30px rgba(109,93,252,0.2); padding:40px; width:100%; max-width:420px; animation:fadeInUp 0.6s ease-out; }
+    @keyframes fadeInUp { from{opacity:0; transform:translateY(30px);} to{opacity:1; transform:translateY(0);} }
+    @keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
+    .auth-card h2 { text-align:center; margin-bottom:10px; color:#fff; font-size:28px; font-weight:700; letter-spacing:1px; text-shadow:0 0 20px rgba(109,93,252,0.8); }
+    .auth-card .subtitle { text-align:center; color:var(--text-secondary); margin-bottom:30px; font-size:14px; }
+    .auth-tabs { display:flex; gap:10px; margin-bottom:25px; background:rgba(255,255,255,0.05); padding:4px; border-radius:10px; border:1px solid rgba(255,255,255,0.1); }
+    .auth-tabs button { flex:1; padding:10px; border:none; background:transparent; border-radius:8px; font-weight:500; transition:var(--transition); color:var(--text-secondary); font-size:14px; }
+    .auth-tabs button.active { background:var(--primary); color:white; box-shadow:0 0 15px rgba(109,93,252,0.5); }
+    .form-group { margin-bottom:20px; }
+    .form-group label { display:block; margin-bottom:6px; font-weight:500; color:var(--text-main); font-size:14px; }
+    .form-group input { width:100%; padding:12px 16px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); border-radius:8px; font-size:15px; color:#fff; transition:var(--transition); }
+    .form-group input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(109,93,252,0.2); background:rgba(255,255,255,0.08); }
+    .btn-primary { width:100%; padding:12px; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:white; border:none; border-radius:8px; font-size:16px; font-weight:600; transition:var(--transition); letter-spacing:1px; }
+    .btn-primary:hover { box-shadow:0 0 25px rgba(109,93,252,0.6); transform:translateY(-2px); }
+    .error-message { color:var(--danger); text-align:center; margin-top:15px; min-height:20px; font-size:14px; }
+
+    #main-container { display:flex; min-height:100vh; }
+    .sidebar { width:250px; background:rgba(15,23,42,0.8); backdrop-filter:blur(20px); border-right:1px solid rgba(255,255,255,0.1); color:white; padding:20px 0; display:flex; flex-direction:column; position:fixed; top:0; bottom:0; left:0; z-index:100; }
+    .sidebar-logo { text-align:center; padding:0 20px 20px; border-bottom:1px solid rgba(255,255,255,0.1); margin-bottom:15px; cursor:pointer; }
+    .sidebar-logo h1 { font-size:18px; font-weight:700; background:linear-gradient(135deg,#fff,#a5b4fc); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+    .sidebar-logo .badge { font-size:10px; background:rgba(109,93,252,0.3); padding:2px 10px; border-radius:12px; display:inline-block; margin-top:3px; color:#c7d2fe; }
+    .nav-links { flex:1; padding:0 12px; overflow-y:auto; }
+    .nav-group { margin-bottom:8px; }
+    .nav-group-title { display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:1px; padding:8px 10px; cursor:pointer; border-radius:6px; transition:var(--transition); user-select:none; }
+    .nav-group-title:hover { background:rgba(255,255,255,0.05); color:#fff; }
+    .nav-group-title .fa-chevron-down { transition:transform 0.3s; }
+    .nav-group.collapsed .nav-group-title .fa-chevron-down { transform:rotate(-90deg); }
+    .nav-group-body { max-height:500px; overflow:hidden; transition:max-height 0.4s ease; }
+    .nav-group.collapsed .nav-group-body { max-height:0; }
+    .nav-item { display:flex; align-items:center; gap:12px; padding:9px 15px; margin-bottom:3px; border-radius:8px; color:rgba(255,255,255,0.7); transition:var(--transition); cursor:pointer; font-weight:500; font-size:13px; }
+    .nav-item:hover { background:rgba(255,255,255,0.08); color:#fff; }
+    .nav-item.active { background:linear-gradient(135deg,rgba(109,93,252,0.3),rgba(0,212,255,0.2)); color:#fff; box-shadow:0 0 15px rgba(109,93,252,0.3); }
+    .nav-item i { width:20px; text-align:center; font-size:14px; }
+    .sidebar-footer { padding:15px 20px; border-top:1px solid rgba(255,255,255,0.1); }
+    .user-profile { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .user-avatar { width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,var(--primary),var(--secondary)); display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:16px; }
+    .user-details { flex:1; }
+    .user-details .name { font-weight:600; font-size:13px; }
+    .user-details .role { font-size:11px; opacity:0.7; }
+    .btn-logout { width:100%; padding:9px; background:rgba(255,255,255,0.08); color:#fff; border:none; border-radius:8px; display:flex; align-items:center; justify-content:center; gap:8px; transition:var(--transition); font-size:13px; }
+    .btn-logout:hover { background:rgba(239,68,68,0.2); }
+
+    .main-content { flex:1; margin-left:250px; padding:20px 25px; }
+    .page-header { margin-bottom:20px; }
+    .page-header h2 { font-size:24px; color:#fff; font-weight:700; }
+    .page-header .breadcrumb { color:var(--text-secondary); font-size:13px; margin-top:3px; }
+
+    .banner { position:relative; height:170px; border-radius:var(--radius); background:linear-gradient(135deg,#1e1b4b 0%,#4f3df0 50%,#00d4ff 100%); background-size:cover; background-position:center; display:flex; align-items:flex-end; padding:20px; margin-bottom:20px; box-shadow:var(--shadow),0 0 30px rgba(109,93,252,0.3); overflow:hidden; }
+    .banner::after { content:''; position:absolute; inset:0; background:linear-gradient(to top,rgba(0,0,0,0.6),transparent); }
+    .banner-content { position:relative; z-index:2; color:#fff; flex:1; }
+    .banner-content h3 { font-size:22px; font-weight:700; text-shadow:0 2px 10px rgba(0,0,0,0.5); }
+    .banner-content p { font-size:13px; opacity:0.9; }
+    .banner-upload { position:absolute; top:15px; right:15px; z-index:3; background:rgba(0,0,0,0.5); border-radius:50%; width:40px; height:40px; display:flex; align-items:center; justify-content:center; color:#fff; cursor:pointer; transition:var(--transition); }
+    .banner-upload:hover { background:rgba(109,93,252,0.8); transform:scale(1.1); }
+    .banner-info { position:absolute; top:15px; right:65px; z-index:3; background:rgba(0,0,0,0.4); border-radius:10px; padding:8px 12px; color:#fff; font-size:12px; text-align:right; }
+
+    .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:15px; margin-bottom:20px; }
+    .stat-card { background:var(--bg-card); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.1); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; display:flex; align-items:center; gap:13px; transition:var(--transition); }
+    .stat-card:hover { transform:translateY(-3px); background:var(--bg-card-hover); }
+    .stat-icon { width:45px; height:45px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:18px; color:white; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); }
+    .stat-icon.green { background:linear-gradient(135deg,#10b981,#059669); }
+    .stat-icon.orange { background:linear-gradient(135deg,#f59e0b,#d97706); }
+    .stat-icon.red { background:linear-gradient(135deg,#ef4444,#dc2626); }
+    .stat-info h4 { font-size:20px; font-weight:700; color:#fff; }
+    .stat-info p { color:var(--text-secondary); font-size:12px; }
+
+    .card { background:var(--bg-card); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.1); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; margin-bottom:15px; transition:var(--transition); }
+    .card:hover { border-color:rgba(255,255,255,0.2); background:var(--bg-card-hover); }
+    .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
+    .card-header h3 { font-size:15px; color:#fff; font-weight:600; }
+
+    .table-responsive { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:9px 11px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.08); font-size:12px; }
+    th { background:rgba(255,255,255,0.03); color:var(--text-secondary); font-weight:600; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; }
+    tr:hover { background:rgba(255,255,255,0.03); }
+
+    .badge { padding:3px 8px; border-radius:15px; font-size:10px; font-weight:600; }
+    .badge-success { background:rgba(16,185,129,0.2); color:#6ee7b7; }
+    .badge-danger { background:rgba(239,68,68,0.2); color:#fca5a5; }
+    .badge-warning { background:rgba(245,158,11,0.2); color:#fcd34d; }
+    .badge-info { background:rgba(109,93,252,0.2); color:#c7d2fe; }
+
+    .btn { padding:7px 13px; border:none; border-radius:8px; font-size:12px; font-weight:500; transition:var(--transition); display:inline-flex; align-items:center; gap:5px; }
+    .btn-sm { padding:4px 8px; font-size:10px; }
+    .btn-primary { background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:white; box-shadow:0 4px 15px rgba(109,93,252,0.4); }
+    .btn-primary:hover { box-shadow:0 6px 25px rgba(109,93,252,0.6); transform:translateY(-2px); }
+    .btn-danger { background:linear-gradient(135deg,#ef4444,#dc2626); color:white; }
+    .btn-outline { background:transparent; border:1px solid rgba(255,255,255,0.3); color:var(--text-main); }
+    .btn-outline:hover { background:rgba(255,255,255,0.1); }
+    .btn-success { background:linear-gradient(135deg,#10b981,#059669); color:white; }
+
+    .form-row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .form-row input,.form-row select,.form-row textarea { padding:8px 11px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); border-radius:8px; font-size:12px; color:#fff; transition:var(--transition); flex:1; min-width:120px; }
+    .form-row input:focus,.form-row select:focus,.form-row textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(109,93,252,0.2); }
+    .form-row select option { background:#1e293b; color:#e2e8f0; }
+    .form-row input::placeholder,.form-row textarea::placeholder { color:#64748b; }
+
+    .quick-actions { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:10px; }
+    .quick-action { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:12px; text-align:center; cursor:pointer; transition:var(--transition); }
+    .quick-action:hover { background:rgba(255,255,255,0.1); transform:translateY(-3px); }
+    .quick-action i { font-size:18px; color:var(--primary-light); margin-bottom:4px; }
+    .quick-action span { display:block; font-size:11px; font-weight:500; color:var(--text-secondary); }
+
+    .empty-state { text-align:center; padding:25px; color:var(--text-secondary); }
+    .empty-state i { font-size:35px; margin-bottom:8px; opacity:0.5; }
+
+    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; z-index:1000; }
+    .modal-content { background:#1e293b; border-radius:16px; padding:20px; max-width:600px; width:90%; max-height:80vh; overflow-y:auto; }
+    .modal-content h3 { color:#fff; margin-bottom:15px; }
+    .modal-actions { margin-top:15px; display:flex; gap:10px; justify-content:flex-end; }
+
+    .toast-container { position:fixed; top:20px; right:20px; z-index:2000; display:flex; flex-direction:column; gap:10px; }
+    .toast { padding:10px 15px; border-radius:8px; color:#fff; font-weight:500; box-shadow:0 4px 15px rgba(0,0,0,0.3); animation:slideIn 0.3s ease, fadeOut 0.5s ease 2.5s forwards; }
+    .toast.success { background:#10b981; } .toast.error { background:#ef4444; } .toast.warning { background:#f59e0b; }
+    @keyframes slideIn { from{transform:translateX(100%); opacity:0;} to{transform:translateX(0); opacity:1;} }
+    @keyframes fadeOut { to{opacity:0; transform:translateX(100%);} }
+
+    /* 座次表 - 重做版 */
+    .seat-grid-wrapper { overflow-x:auto; padding:10px 0; }
+    .seat-row { display:flex; align-items:center; justify-content:center; margin-bottom:8px; }
+    .seat-group { display:flex; gap:4px; }
+    .seat-group-divider { width:25px; display:flex; align-items:center; justify-content:center; color:var(--text-secondary); font-size:9px; letter-spacing:1px; flex-shrink:0; }
+    .seat-item { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:8px; text-align:center; cursor:pointer; transition:var(--transition); position:relative; min-width:70px; }
+    .seat-item:hover { background:rgba(255,255,255,0.1); transform:translateY(-2px); }
+    .seat-item.empty { background:rgba(255,255,255,0.02); border-style:dashed; cursor:default; }
+    .seat-item.empty:hover { transform:none; background:rgba(255,255,255,0.02); }
+    .seat-item .seat-name { font-weight:600; font-size:12px; }
+    .seat-item .seat-number { font-size:9px; color:var(--text-secondary); }
+    .seat-item .gender-badge { position:absolute; top:4px; right:4px; font-size:9px; }
+    .seat-item.male { border-left:3px solid #3b82f6; }
+    .seat-item.female { border-left:3px solid #ec4899; }
+    .seat-item.selected { border-color:var(--primary); box-shadow:0 0 15px rgba(109,93,252,0.5); }
+
+    /* 随机点名 */
+    .rollcall-display-box { font-size:52px; font-weight:800; margin:15px 0; color:#fff; text-shadow:0 0 30px rgba(109,93,252,0.8); letter-spacing:2px; min-height:80px; display:flex; align-items:center; justify-content:center; }
+    .rollcall-display-box.rolling { animation:pulse 0.2s ease infinite alternate; }
+    @keyframes pulse { from{transform:scale(1);} to{transform:scale(1.05);} }
+
+    /* 作业卡片 */
+    .homework-card { background:var(--bg-card); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:12px; margin-bottom:10px; cursor:pointer; transition:var(--transition); }
+    .homework-card:hover { background:var(--bg-card-hover); transform:translateY(-2px); box-shadow:var(--shadow); }
+    .homework-card .hw-subject { font-size:12px; font-weight:600; color:var(--primary-light); }
+    .homework-card .hw-title { font-size:14px; font-weight:600; color:#fff; }
+    .homework-card .hw-meta { font-size:11px; color:var(--text-secondary); }
+
+    /* 朋友圈 */
+    .post-card { background:var(--bg-card); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:14px; margin-bottom:10px; cursor:pointer; transition:var(--transition); }
+    .post-card:hover { background:var(--bg-card-hover); transform:translateY(-2px); }
+    .post-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+    .post-avatar { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,var(--primary),var(--secondary)); display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:14px; }
+    .post-media-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:6px; margin-top:8px; }
+    .post-media-grid img { width:100%; border-radius:6px; object-fit:cover; }
+
+    /* 学生头像墙 */
+    .avatar-wall { display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:12px; }
+    .avatar-item { text-align:center; cursor:pointer; transition:var(--transition); }
+    .avatar-item:hover { transform:scale(1.1); }
+    .avatar-circle { width:60px; height:60px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:bold; color:#fff; margin:0 auto 5px; }
+    .avatar-item span { font-size:11px; color:var(--text-secondary); }
+
+    /* 课程表色块 */
+    .schedule-block { border-radius:6px; padding:4px 6px; margin:2px 0; cursor:pointer; transition:var(--transition); }
+    .schedule-block:hover { transform:scale(1.03); box-shadow:0 0 10px rgba(0,0,0,0.3); }
+    .schedule-subject { font-weight:600; font-size:11px; }
+    .schedule-teacher { font-size:9px; opacity:0.8; }
+    .schedule-time { font-size:9px; color:var(--text-secondary); }
+
+    @media (max-width:768px) {
+      .sidebar { width:60px; padding:15px 0; }
+      .sidebar-logo h1,.sidebar-logo .badge,.user-details,.nav-item span,.nav-group-title span { display:none; }
+      .nav-group-title { justify-content:center; padding:8px; }
+      .nav-group-body { max-height:0 !important; }
+      .nav-item { justify-content:center; padding:10px; }
+      .nav-item i { margin:0; font-size:16px; }
+      .main-content { margin-left:60px; padding:12px; }
+      .banner { height:130px; }
+      .rollcall-display-box { font-size:32px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="notification-bell" id="notification-bell" onclick="switchPage('notifications')">
+    <i class="fa-solid fa-bell"></i>
+    <span class="notification-badge" id="notification-badge" style="display:none;">0</span>
+  </div>
+
+  <div id="auth-container">
+    <div class="auth-card">
+      <h2><i class="fa-solid fa-graduation-cap"></i> WORKBUDDY PRO</h2>
+      <p class="subtitle">班级管理系统 · 云端版</p>
+      <div class="auth-tabs">
+        <button id="login-tab" class="active">登录</button>
+        <button id="signup-tab">注册</button>
+      </div>
+      <form id="auth-form">
+        <div class="form-group"><label>用户名</label><input type="text" id="username" required placeholder="请输入用户名"></div>
+        <div class="form-group" id="realname-group" style="display:none;"><label>真实姓名</label><input type="text" id="realname" placeholder="请输入真实姓名"></div>
+        <div class="form-group"><label>密码</label><input type="password" id="password" required minlength="6" placeholder="至少6位密码"></div>
+        <button type="submit" class="btn-primary" id="auth-submit-btn">登 录</button>
+      </form>
+      <p id="auth-message" class="error-message"></p>
+    </div>
+  </div>
+
+  <div id="main-container" style="display:none;">
+    <aside class="sidebar">
+      <div class="sidebar-logo" id="logo-home"><h1>WORKBUDDY</h1><span class="badge">PRO 云端版</span></div>
+      <nav class="nav-links" id="nav-links"></nav>
+      <div class="sidebar-footer">
+        <div class="user-profile">
+          <div class="user-avatar" id="user-avatar-letter">A</div>
+          <div class="user-details">
+            <div class="name" id="sidebar-username">用户名</div>
+            <div class="role" id="sidebar-role">角色</div>
+          </div>
+        </div>
+        <button class="btn-logout" id="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> 退出登录</button>
+      </div>
+    </aside>
+    <main class="main-content">
+      <div class="banner" id="top-banner">
+        <div class="banner-content"><h3 id="banner-greeting">早上好，老师！</h3><p id="banner-class-info">班级：加载中...</p></div>
+        <div class="banner-info" id="banner-date-info"></div>
+        <div class="banner-upload" id="banner-upload-btn" title="更换背景图"><i class="fa-solid fa-camera"></i></div>
+      </div>
+      <input type="file" id="bg-upload-input" accept="image/*" style="display:none;">
+      <div id="page-container"></div>
+    </main>
+  </div>
+
+  <script>
+    // ==================== 全局配置 ====================
+    var SUPABASE_URL = 'https://qcxazwxjglgjujuthsec.supabase.co';
+    var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFjeGF6d3hqZ2xnanVqdXRoc2VjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MTYzMTQsImV4cCI6MjEwMjI5MjMxNH0.qa7XqqbsV44UsG_l4tEMOlzuZkw7qattEhYedfxZHqs';
+    var AI_WORKER_URL = '/api/ai';
+    var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    var AppState = {
+      currentUser: null, currentProfile: null, authMode: 'login',
+      allStudents: [], attendanceStudents: [], homeworkList: [],
+      currentSort: { field: 'seat', order: 'asc' }, selectedStudents: [],
+      selectedExamId: null, commentList: [], unreadNotifications: 0,
+      scheduleView: 'class', commView: 'overview',
+      navCollapsed: {}, selectedStudentId: null,
+      schoolStartDate: '2026-09-01', selectedSemesterId: null
+    };
+
+    // ==================== 工具函数 ====================
+    function showToast(message, type = 'success') {
+      const container = document.querySelector('.toast-container') || (() => { const div = document.createElement('div'); div.className = 'toast-container'; document.body.appendChild(div); return div; })();
+      const toast = document.createElement('div'); toast.className = `toast ${type}`; toast.textContent = message;
+      container.appendChild(toast); setTimeout(() => toast.remove(), 3000);
+    }
+    function escapeHtml(text) { if (!text) return ''; const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
+    function parseCSV(text) {
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      return lines.map(line => {
+        const result = []; let current = ''; let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i];
+          if (c === '"') inQuotes = !inQuotes;
+          else if (c === ',' && !inQuotes) { result.push(current.trim()); current = ''; }
+          else current += c;
+        }
+        result.push(current.trim()); return result;
+      });
+    }
+    function compressImage(file, maxWidth, quality) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width, height = img.height;
+            if (width > maxWidth) { height = (height * maxWidth) / width; width = maxWidth; }
+            canvas.width = width; canvas.height = height;
+            const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob((blob) => resolve(new File([blob], 'compressed.jpg', { type: 'image/jpeg' })), 'image/jpeg', quality);
+          };
+          img.onerror = reject; img.src = e.target.result;
+        };
+        reader.onerror = reject; reader.readAsDataURL(file);
+      });
+    }
+    async function logActivity(action, details) {
+      if (!AppState.currentProfile) return;
+      try { await supabase.from('activity_logs').insert({ class_id: AppState.currentProfile.class_id, user_id: AppState.currentUser.id, action, details }); } catch (err) {}
+    }
+    function getRoleLabel(role) { const map = { 'admin': '系统管理员', 'class_teacher': '班主任', 'subject_teacher': '科任教师' }; return map[role] || role; }
+    function exportStudents(data) {
+      if (!data || data.length === 0) { showToast('没有学生数据可导出', 'warning'); return; }
+      const rows = data.map(s => ({ '学号': s.student_no || '', '姓名': s.name, '性别': s.gender || '', '座位': s.seat || '', '职务': s.role || '', '家长姓名': s.parent_name || '', '家长电话': s.parent_phone || '', '住址': s.address || '' }));
+      const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '学生名单'); XLSX.writeFile(wb, `学生名单_${new Date().toISOString().split('T')[0]}.xlsx`);
+      showToast('导出成功', 'success');
+    }
+
+    // ==================== AI 调用封装 ====================
+    async function callAI(type, payload) {
+      try {
+        const response = await fetch(AI_WORKER_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, payload })
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ error: '请求失败' }));
+          throw new Error(err.error || 'AI 调用失败');
+        }
+        const result = await response.json();
+        return result.content;
+      } catch (error) {
+        console.error('AI 调用错误:', error);
+        showToast('AI 服务不可用：' + error.message, 'error');
+        return null;
+      }
+    }
+
+    // ==================== 认证 ====================
+    function setAuthMode(mode) {
+      AppState.authMode = mode;
+      const loginTab = document.getElementById('login-tab'), signupTab = document.getElementById('signup-tab');
+      const realnameGroup = document.getElementById('realname-group'), realnameInput = document.getElementById('realname');
+      if (mode === 'login') {
+        loginTab.classList.add('active'); signupTab.classList.remove('active');
+        realnameGroup.style.display = 'none'; realnameInput.removeAttribute('required');
+        document.getElementById('auth-submit-btn').textContent = '登 录';
+      } else {
+        loginTab.classList.remove('active'); signupTab.classList.add('active');
+        realnameGroup.style.display = 'block'; realnameInput.setAttribute('required', '');
+        document.getElementById('auth-submit-btn').textContent = '注 册';
+      }
+      document.getElementById('auth-message').textContent = '';
+    }
+    async function handleAuth(e) {
+      e.preventDefault();
+      const username = document.getElementById('username').value.trim();
+      const realname = document.getElementById('realname').value.trim();
+      const password = document.getElementById('password').value;
+      const email = `${username}@workbuddy.local`;
+      try {
+        if (AppState.authMode === 'signup') {
+          const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { username, realname } } });
+          if (error) throw error;
+          if (data.user) { AppState.currentUser = data.user; const profile = await fetchProfile(); if (profile) { AppState.currentProfile = profile; showMain(); switchPage('dashboard'); if (profile.role === 'admin') { loadUsers(); } applyBannerBackground(); } }
+          else { showToast('注册成功，但需要邮箱确认', 'warning'); }
+        } else {
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          AppState.currentUser = data.user; const profile = await fetchProfile();
+          if (!profile) { showToast('用户资料不存在', 'error'); await supabase.auth.signOut(); return; }
+          if (!profile.is_active) { showToast('账户已被禁用', 'error'); await supabase.auth.signOut(); return; }
+          AppState.currentProfile = profile; showMain(); switchPage('dashboard');
+          if (profile.role === 'admin') { loadUsers(); } applyBannerBackground();
+        }
+      } catch (error) { showToast(error.message || '操作失败', 'error'); }
+    }
+    async function fetchProfile() {
+      if (!AppState.currentUser) return null;
+      const { data, error } = await supabase.from('profiles').select('*').eq('id', AppState.currentUser.id).single();
+      if (error) return null; return data;
+    }
+    function showAuth() { document.getElementById('auth-container').style.display = 'flex'; document.getElementById('main-container').style.display = 'none'; }
+    function showMain() {
+      document.getElementById('auth-container').style.display = 'none'; document.getElementById('main-container').style.display = 'flex';
+      const avatarLetter = (AppState.currentProfile.realname || AppState.currentProfile.username).charAt(0).toUpperCase();
+      document.getElementById('user-avatar-letter').textContent = avatarLetter;
+      document.getElementById('sidebar-username').textContent = AppState.currentProfile.realname || AppState.currentProfile.username;
+      document.getElementById('sidebar-role').textContent = getRoleLabel(AppState.currentProfile.role);
+    }
+    function applyBannerBackground() {
+      const banner = document.getElementById('top-banner');
+      if (AppState.currentProfile && AppState.currentProfile.header_bg_url) {
+        banner.style.backgroundImage = `url('${AppState.currentProfile.header_bg_url}')`;
+        banner.style.backgroundSize = 'cover'; banner.style.backgroundPosition = 'center';
+      } else { banner.style.backgroundImage = 'linear-gradient(135deg, #1e1b4b 0%, #4f3df0 50%, #00d4ff 100%)'; }
+    }
+    async function handleBannerUpload(event) {
+      const file = event.target.files[0]; if (!file) return;
+      if (!file.type.startsWith('image/')) { showToast('请选择图片文件', 'error'); return; }
+      try {
+        const compressedFile = await compressImage(file, 1600, 0.8);
+        const fileName = `${AppState.currentUser.id}_${Date.now()}.jpg`;
+        await supabase.storage.from('header-images').upload(fileName, compressedFile, { upsert: true });
+        const { data: urlData } = supabase.storage.from('header-images').getPublicUrl(fileName);
+        await supabase.from('profiles').update({ header_bg_url: urlData.publicUrl }).eq('id', AppState.currentUser.id);
+        AppState.currentProfile.header_bg_url = urlData.publicUrl; applyBannerBackground();
+        showToast('背景图上传成功！', 'success');
+      } catch (error) { showToast('上传失败：' + error.message, 'error'); }
+      finally { event.target.value = ''; }
+    }
+    async function logout() { await supabase.auth.signOut(); AppState.currentUser = null; AppState.currentProfile = null; showAuth(); }
+
+    // ==================== 导航 ====================
+    const NAV_GROUPS = [
+      { title: '总览', items: [{ page: 'dashboard', icon: 'fa-gauge-high', label: '工作台' }] },
+      { title: '班级管理', items: [
+        { page: 'students', icon: 'fa-users', label: '学生管理' },
+        { page: 'seating', icon: 'fa-chair', label: '座次表' },
+        { page: 'rollcall', icon: 'fa-shuffle', label: '随机点名' }
+      ]},
+      { title: '教学管理', items: [
+        { page: 'homework', icon: 'fa-book', label: '作业管理' },
+        { page: 'grades', icon: 'fa-chart-bar', label: '成绩管理' },
+        { page: 'schedule', icon: 'fa-calendar-days', label: '课程表' }
+      ]},
+      { title: '学生发展', items: [
+        { page: 'attendance', icon: 'fa-calendar-check', label: '考勤管理' },
+        { page: 'comments', icon: 'fa-comment-dots', label: '期末评语' },
+        { page: 'analysis', icon: 'fa-user-graduate', label: '综合分析' },
+        { page: 'evaluation', icon: 'fa-star', label: '班级评价' }
+      ]},
+      { title: '家校沟通', items: [
+        { page: 'communication', icon: 'fa-phone', label: '家校沟通' },
+        { page: 'notices', icon: 'fa-bullhorn', label: '通知公告' }
+      ]},
+      { title: '协同管理', items: [
+        { page: 'moments', icon: 'fa-images', label: '班级朋友圈' },
+        { page: 'insights', icon: 'fa-chart-pie', label: '数据洞察' },
+        { page: 'notifications', icon: 'fa-bell', label: '通知中心' },
+        { page: 'tasks', icon: 'fa-list-check', label: '任务协作' },
+        { page: 'users', icon: 'fa-user-shield', label: '用户管理', adminOnly: true }
+      ]}
+    ];
+
+    function renderNavigation() {
+      const nav = document.getElementById('nav-links'); nav.innerHTML = '';
+      NAV_GROUPS.forEach((group, index) => {
+        if (group.items.every(item => item.adminOnly && (!AppState.currentProfile || AppState.currentProfile.role !== 'admin'))) return;
+        const isCollapsed = AppState.navCollapsed[index] !== undefined ? AppState.navCollapsed[index] : false;
+        const groupDiv = document.createElement('div'); groupDiv.className = `nav-group ${isCollapsed ? 'collapsed' : ''}`;
+        groupDiv.innerHTML = `<div class="nav-group-title" data-group-index="${index}"><span>${group.title}</span><i class="fa-solid fa-chevron-down"></i></div><div class="nav-group-body"></div>`;
+        const body = groupDiv.querySelector('.nav-group-body');
+        group.items.forEach(item => {
+          if (item.adminOnly && (!AppState.currentProfile || AppState.currentProfile.role !== 'admin')) return;
+          const div = document.createElement('div'); div.className = 'nav-item'; div.dataset.page = item.page;
+          div.innerHTML = `<i class="fa-solid ${item.icon}"></i><span>${item.label}</span>`;
+          div.addEventListener('click', () => { switchPage(item.page); });
+          body.appendChild(div);
+        });
+        groupDiv.querySelector('.nav-group-title').addEventListener('click', (e) => {
+          e.stopPropagation();
+          const idx = parseInt(e.currentTarget.dataset.groupIndex);
+          AppState.navCollapsed[idx] = !AppState.navCollapsed[idx];
+          groupDiv.classList.toggle('collapsed');
+        });
+        nav.appendChild(groupDiv);
+      });
+    }
+
+    function renderPageContainers() {
+      const container = document.getElementById('page-container');
+      container.innerHTML = `
+        <div id="page-dashboard" class="page" style="display:none;"></div>
+        <div id="page-students" class="page" style="display:none;"></div>
+        <div id="page-seating" class="page" style="display:none;"></div>
+        <div id="page-rollcall" class="page" style="display:none;"></div>
+        <div id="page-homework" class="page" style="display:none;"></div>
+        <div id="page-grades" class="page" style="display:none;"></div>
+        <div id="page-schedule" class="page" style="display:none;"></div>
+        <div id="page-attendance" class="page" style="display:none;"></div>
+        <div id="page-comments" class="page" style="display:none;"></div>
+        <div id="page-analysis" class="page" style="display:none;"></div>
+        <div id="page-evaluation" class="page" style="display:none;"></div>
+        <div id="page-communication" class="page" style="display:none;"></div>
+        <div id="page-notices" class="page" style="display:none;"></div>
+        <div id="page-moments" class="page" style="display:none;"></div>
+        <div id="page-insights" class="page" style="display:none;"></div>
+        <div id="page-notifications" class="page" style="display:none;"></div>
+        <div id="page-tasks" class="page" style="display:none;"></div>
+        <div id="page-users" class="page" style="display:none;"></div>
+      `;
+    }
+
+    function switchPage(pageId, studentId = null) {
+      if (studentId) AppState.selectedStudentId = studentId;
+      document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+      const target = document.getElementById(`page-${pageId}`);
+      if (target) target.style.display = 'block';
+      document.querySelectorAll('.nav-item').forEach(item => {
+        if (item.dataset.page === pageId) item.classList.add('active'); else item.classList.remove('active');
+      });
+      const loaders = {
+        dashboard: loadDashboard, students: loadStudents, seating: loadSeating,
+        rollcall: loadRollcall, homework: loadHomework, grades: loadGrades,
+        schedule: loadSchedule, attendance: loadAttendance, comments: loadComments,
+        analysis: loadAnalysis, evaluation: loadEvaluation, communication: loadCommunication,
+        notices: loadNotices, moments: loadMoments, insights: loadInsights,
+        notifications: loadNotifications, tasks: loadTasks, users: loadUsers
+      };
+      if (loaders[pageId]) loaders[pageId]();
+    }
+    window.switchPage = switchPage;
+    window.switchPageWithStudent = function(pageId, studentId) { switchPage(pageId, studentId); };
+
+    // ==================== 工作台 ====================
+    function loadDashboard() {
+      const container = document.getElementById('page-dashboard');
+      container.innerHTML = `
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-icon"><i class="fa-solid fa-users"></i></div><div class="stat-info"><h4 id="stat-students">0</h4><p>班级学生数</p></div></div>
+          <div class="stat-card"><div class="stat-icon green"><i class="fa-solid fa-user-check"></i></div><div class="stat-info"><h4 id="stat-attendance">-</h4><p>今日出勤率</p></div></div>
+          <div class="stat-card"><div class="stat-icon orange"><i class="fa-solid fa-book-open"></i></div><div class="stat-info"><h4 id="stat-homework">-</h4><p>待批作业</p></div></div>
+          <div class="stat-card"><div class="stat-icon red"><i class="fa-solid fa-chart-bar"></i></div><div class="stat-info"><h4 id="stat-exam">-</h4><p>最近考试均分</p></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>快捷操作</h3></div>
+          <div class="quick-actions">
+            <div class="quick-action" data-page="attendance"><i class="fa-solid fa-calendar-check"></i><span>考勤打卡</span></div>
+            <div class="quick-action" data-page="homework"><i class="fa-solid fa-book"></i><span>布置作业</span></div>
+            <div class="quick-action" data-page="rollcall"><i class="fa-solid fa-shuffle"></i><span>随机点名</span></div>
+            <div class="quick-action" data-page="grades"><i class="fa-solid fa-chart-pie"></i><span>成绩录入</span></div>
+            <div class="quick-action" data-page="moments"><i class="fa-solid fa-images"></i><span>发动态</span></div>
+            <div class="quick-action" data-page="insights"><i class="fa-solid fa-magnifying-glass-chart"></i><span>数据洞察</span></div>
+          </div>
+        </div>
+        <div class="card"><div class="card-header"><h3>最新动态</h3></div><div id="activity-list" class="empty-state"><i class="fa-regular fa-clock"></i><p>暂无动态</p></div></div>
+      `;
+      if (!AppState.currentProfile) return;
+      supabase.from('classes').select('name').eq('id', AppState.currentProfile.class_id).single().then(({ data }) => {
+        document.getElementById('banner-class-info').textContent = data ? `班级：${data.name}` : '班级：未设置';
+      });
+      supabase.from('students').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id).then(({ count }) => {
+        document.getElementById('stat-students').textContent = count || 0;
+      });
+      const today = new Date().toISOString().split('T')[0];
+      supabase.from('attendance').select('status').eq('class_id', AppState.currentProfile.class_id).eq('date', today).then(({ data: attData }) => {
+        if (attData && attData.length > 0 && AppState.allStudents.length > 0) {
+          const present = attData.filter(a => a.status === 'present' || a.status === 'late').length;
+          document.getElementById('stat-attendance').textContent = Math.round((present / AppState.allStudents.length) * 100) + '%';
+        } else document.getElementById('stat-attendance').textContent = '-';
+      });
+      supabase.from('homework').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id).then(({ count }) => {
+        document.getElementById('stat-homework').textContent = count || 0;
+      });
+      const hour = new Date().getHours();
+      let greeting = '你好';
+      if (hour < 6) greeting = '凌晨好';
+      else if (hour < 12) greeting = '早上好';
+      else if (hour < 18) greeting = '下午好';
+      else greeting = '晚上好';
+      document.getElementById('banner-greeting').textContent = `${greeting}，${AppState.currentProfile.realname || AppState.currentProfile.username}老师！`;
+      supabase.from('activity_logs').select('*').eq('class_id', AppState.currentProfile.class_id).order('created_at', { ascending: false }).limit(10).then(({ data: logs }) => {
+        const activityList = document.getElementById('activity-list');
+        if (logs && logs.length > 0) {
+          activityList.innerHTML = logs.map(log => `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><span>${escapeHtml(log.action)} ${escapeHtml(log.details || '')}</span><span style="color:var(--text-secondary);font-size:11px;">${new Date(log.created_at).toLocaleString('zh-CN')}</span></div>`).join('');
+        }
+      });
+      container.querySelectorAll('.quick-action[data-page]').forEach(el => el.addEventListener('click', () => switchPage(el.dataset.page)));
+      loadBannerInfo();
+    }
+
+    async function loadBannerInfo() {
+      const infoDiv = document.getElementById('banner-date-info');
+      const today = new Date();
+      const dateStr = `${today.getFullYear()}年${today.getMonth()+1}月${today.getDate()}日 星期${'日一二三四五六'[today.getDay()]}`;
+      let schoolStart = AppState.schoolStartDate || '2026-09-01';
+      const startDate = new Date(schoolStart);
+      const diffDays = Math.ceil((startDate - today) / (24*60*60*1000));
+      let daysText = '';
+      if (diffDays > 0) daysText = `距开学还有 ${diffDays} 天`;
+      else if (diffDays === 0) daysText = '今天开学！';
+      else daysText = `已开学 ${Math.abs(diffDays)} 天`;
+      const quotes = [
+        '教育不是灌满一桶水，而是点燃一把火。 —— 叶芝',
+        '学而不思则罔，思而不学则殆。 —— 孔子',
+        '教育是改变世界最强大的武器。 —— 曼德拉',
+        'The best way to predict the future is to create it. —— Peter Drucker',
+        '千里之行，始于足下。 —— 老子',
+        '兴趣是最好的老师。 —— 爱因斯坦',
+        '教育的目的在于让人能够继续教育自己。 —— 杜威',
+        '授人以鱼不如授人以渔。 —— 谚语'
+      ];
+      const quote = quotes[Math.floor(Math.random() * quotes.length)];
+      infoDiv.innerHTML = `${dateStr}<br>${daysText}<br><em>${quote}</em>`;
+    }
+
+    // ==================== 初始化 ====================
+    document.addEventListener('DOMContentLoaded', async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        AppState.currentUser = user;
+        const profile = await fetchProfile();
+        if (profile && profile.is_active) {
+          AppState.currentProfile = profile;
+          renderNavigation(); renderPageContainers(); showMain(); switchPage('dashboard');
+          if (profile.role === 'admin') { loadUsers(); }
+          applyBannerBackground(); loadNotificationBadge();
+          supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id).then(({ data }) => { AppState.allStudents = data || []; });
+          supabase.from('settings').select('*').eq('class_id', AppState.currentProfile.class_id).maybeSingle().then(({ data }) => {
+            if (data) AppState.schoolStartDate = data.school_start_date || '2026-09-01';
+          });
+        } else { await supabase.auth.signOut(); showAuth(); }
+      } else { showAuth(); }
+      document.getElementById('login-tab').addEventListener('click', () => setAuthMode('login'));
+      document.getElementById('signup-tab').addEventListener('click', () => setAuthMode('signup'));
+      document.getElementById('auth-form').addEventListener('submit', handleAuth);
+      document.getElementById('logout-btn').addEventListener('click', logout);
+      document.getElementById('banner-upload-btn').addEventListener('click', () => document.getElementById('bg-upload-input').click());
+      document.getElementById('bg-upload-input').addEventListener('change', handleBannerUpload);
+      document.getElementById('logo-home').addEventListener('click', () => switchPage('dashboard'));
+    });
+
+    async function loadNotificationBadge() {
+      const { data } = await supabase.from('notifications').select('id').eq('class_id', AppState.currentProfile.class_id).eq('is_read', false);
+      const unread = data ? data.length : 0;
+      const badge = document.getElementById('notification-badge');
+      if (unread > 0) { badge.style.display = 'flex'; badge.textContent = unread; } else { badge.style.display = 'none'; }
+    }
+    // ==================== 学生管理（增强版） ====================
+    function loadStudents() {
+      const container = document.getElementById('page-students');
+      container.innerHTML = `
+        <div class="page-header"><h2>学生管理</h2><div class="breadcrumb">首页 / 学生管理</div></div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-icon"><i class="fa-solid fa-users"></i></div><div class="stat-info"><h4 id="stu-total">0</h4><p>学生总数</p></div></div>
+          <div class="stat-card"><div class="stat-icon green"><i class="fa-solid fa-male"></i></div><div class="stat-info"><h4 id="stu-male">0</h4><p>男生</p></div></div>
+          <div class="stat-card"><div class="stat-icon orange"><i class="fa-solid fa-female"></i></div><div class="stat-info"><h4 id="stu-female">0</h4><p>女生</p></div></div>
+          <div class="stat-card"><div class="stat-icon red"><i class="fa-solid fa-user-tie"></i></div><div class="stat-info"><h4 id="stu-cadre">0</h4><p>班干部</p></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>学生列表</h3>
+            <div class="form-row" style="flex:1; gap:6px;">
+              <select id="filter-gender" style="max-width:100px;"><option value="">全部性别</option><option value="男">男</option><option value="女">女</option></select>
+              <select id="filter-role" style="max-width:120px;"><option value="">全部职务</option><option value="班干部">班干部</option></select>
+              <input type="text" id="search-student" placeholder="搜索姓名/学号" style="max-width:160px;">
+              <button class="btn btn-primary btn-sm" id="add-student-btn"><i class="fa-solid fa-plus"></i> 添加</button>
+              <button class="btn btn-outline btn-sm" id="import-students-btn"><i class="fa-solid fa-file-import"></i> 导入</button>
+              <button class="btn btn-outline btn-sm" id="export-students-btn"><i class="fa-solid fa-download"></i> 导出</button>
+              <button class="btn btn-danger btn-sm" id="clear-students-btn"><i class="fa-solid fa-trash"></i> 清空</button>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table id="students-table">
+              <thead><tr>
+                <th>学号</th><th>姓名</th><th>性别</th><th>座位</th><th>职务</th><th>家长姓名</th><th>家长电话</th><th>住址</th><th>操作</th>
+              </tr></thead>
+              <tbody id="students-tbody"></tbody>
+            </table>
+            <div id="students-empty" class="empty-state" style="display:none;"><i class="fa-solid fa-user-plus"></i><p>暂无学生</p></div>
+          </div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id).order('seat', { ascending: true }).then(({ data, error }) => {
+        if (error) { showToast('加载学生失败', 'error'); return; }
+        AppState.allStudents = data;
+        document.getElementById('stu-total').textContent = data.length;
+        document.getElementById('stu-male').textContent = data.filter(s => s.gender === '男').length;
+        document.getElementById('stu-female').textContent = data.filter(s => s.gender === '女').length;
+        document.getElementById('stu-cadre').textContent = data.filter(s => s.role && s.role.trim() !== '').length;
+        applyStudentFilters();
+      });
+      document.getElementById('add-student-btn').addEventListener('click', () => openStudentModal());
+      document.getElementById('import-students-btn').addEventListener('click', openImportModal);
+      document.getElementById('export-students-btn').addEventListener('click', () => exportStudents(AppState.allStudents));
+      document.getElementById('clear-students-btn').addEventListener('click', clearAllStudents);
+      document.getElementById('filter-gender').addEventListener('change', applyStudentFilters);
+      document.getElementById('filter-role').addEventListener('change', applyStudentFilters);
+      document.getElementById('search-student').addEventListener('input', applyStudentFilters);
+    }
+
+    function applyStudentFilters() {
+      const gender = document.getElementById('filter-gender')?.value || '';
+      const role = document.getElementById('filter-role')?.value || '';
+      const search = document.getElementById('search-student')?.value.toLowerCase() || '';
+      let filtered = AppState.allStudents.filter(s => {
+        if (gender && s.gender !== gender) return false;
+        if (role === '班干部' && (!s.role || s.role.trim() === '')) return false;
+        if (search && !(s.name.toLowerCase().includes(search) || (s.student_no && s.student_no.toLowerCase().includes(search)))) return false;
+        return true;
+      });
+      const tbody = document.getElementById('students-tbody');
+      const empty = document.getElementById('students-empty');
+      tbody.innerHTML = '';
+      if (filtered.length === 0) { empty.style.display = 'block'; return; }
+      empty.style.display = 'none';
+      filtered.forEach(s => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${escapeHtml(s.student_no || '-')}</td>
+          <td><a href="#" class="student-detail-link" data-id="${s.id}" style="color:#8a7fff;">${escapeHtml(s.name)}</a></td>
+          <td>${s.gender === '男' ? '<i class="fa-solid fa-mars" style="color:#3b82f6;"></i> 男' : s.gender === '女' ? '<i class="fa-solid fa-venus" style="color:#ec4899;"></i> 女' : '-'}</td>
+          <td>${s.seat || '-'}</td>
+          <td>${s.role ? `<span class="badge badge-info">${escapeHtml(s.role)}</span>` : '-'}</td>
+          <td>${escapeHtml(s.parent_name || '-')}</td>
+          <td>${escapeHtml(s.parent_phone || '-')}</td>
+          <td>${escapeHtml(s.address || '-')}</td>
+          <td>
+            <button class="btn btn-sm btn-primary edit-student-btn" data-id="${s.id}"><i class="fa-solid fa-edit"></i></button>
+            <button class="btn btn-sm btn-danger delete-student-btn" data-id="${s.id}"><i class="fa-solid fa-trash"></i></button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+      tbody.querySelectorAll('.student-detail-link').forEach(a => a.addEventListener('click', e => { e.preventDefault(); openStudentDetail(a.dataset.id); }));
+      tbody.querySelectorAll('.edit-student-btn').forEach(btn => btn.addEventListener('click', () => openStudentModal(btn.dataset.id)));
+      tbody.querySelectorAll('.delete-student-btn').forEach(btn => btn.addEventListener('click', () => deleteStudent(btn.dataset.id)));
+    }
+
+    function openStudentModal(studentId = null) {
+      const student = studentId ? AppState.allStudents.find(s => s.id == studentId) : null;
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>${student ? '编辑学生' : '添加学生'}</h3>
+        <div class="form-row" style="flex-direction:column;gap:8px;">
+          <div class="form-row"><input type="text" id="modal-student-no" placeholder="学号" value="${student?.student_no || ''}"><input type="text" id="modal-student-name" placeholder="姓名" value="${student?.name || ''}"></div>
+          <div class="form-row">
+            <select id="modal-student-gender"><option value="">选择性别</option><option value="男" ${student?.gender === '男' ? 'selected' : ''}>男</option><option value="女" ${student?.gender === '女' ? 'selected' : ''}>女</option></select>
+            <input type="number" id="modal-student-seat" placeholder="座位号" value="${student?.seat || ''}">
+            <select id="modal-student-role"><option value="">选择职务</option>${['班长','副班长','学习委员','纪律委员','劳动委员','体育委员','文艺委员','生活委员','宣传委员','组织委员'].map(r => `<option value="${r}" ${student?.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
+          </div>
+          <div class="form-row"><input type="text" id="modal-parent-name" placeholder="家长姓名" value="${student?.parent_name || ''}"><input type="text" id="modal-student-phone" placeholder="家长电话" value="${student?.parent_phone || ''}"></div>
+          <input type="text" id="modal-student-address" placeholder="家庭住址" value="${student?.address || ''}">
+        </div>
+        <div class="modal-actions"><button class="btn btn-outline" id="modal-cancel">取消</button><button class="btn btn-primary" id="modal-save">保存</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('modal-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('modal-save').addEventListener('click', async () => {
+        const data = {
+          student_no: document.getElementById('modal-student-no').value.trim() || null,
+          name: document.getElementById('modal-student-name').value.trim(),
+          gender: document.getElementById('modal-student-gender').value || null,
+          seat: document.getElementById('modal-student-seat').value ? parseInt(document.getElementById('modal-student-seat').value) : null,
+          role: document.getElementById('modal-student-role').value || null,
+          parent_name: document.getElementById('modal-parent-name').value.trim() || null,
+          parent_phone: document.getElementById('modal-student-phone').value.trim() || null,
+          address: document.getElementById('modal-student-address').value.trim() || null
+        };
+        if (!data.name) { showToast('姓名不能为空', 'error'); return; }
+        try {
+          if (studentId) { await supabase.from('students').update(data).eq('id', studentId); showToast('学生信息已更新', 'success'); }
+          else { await supabase.from('students').insert({ ...data, class_id: AppState.currentProfile.class_id }); showToast('学生添加成功', 'success'); }
+          modal.remove(); loadStudents(); loadDashboard();
+        } catch (err) { showToast('保存失败：' + err.message, 'error'); }
+      });
+    }
+
+    function deleteStudent(id) {
+      if (!confirm('确定删除该学生？')) return;
+      supabase.from('students').delete().eq('id', id).then(() => { showToast('学生已删除', 'success'); loadStudents(); });
+    }
+
+    async function clearAllStudents() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>清空所有学生</h3>
+        <p style="color:var(--danger);margin-bottom:10px;">⚠️ 此操作将删除本班级所有学生及其关联数据（考勤、作业、成绩等），不可恢复！</p>
+        <p style="margin-bottom:8px;">请输入您的登录密码以确认：</p>
+        <input type="password" id="clear-password" placeholder="请输入密码" style="width:100%;padding:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;">
+        <p style="margin-top:8px;">确认倒计时 <span id="clear-countdown">5</span> 秒</p>
+        <div class="modal-actions"><button class="btn btn-outline" id="clear-cancel">取消</button><button class="btn btn-danger" id="clear-confirm" disabled>确认清空</button></div></div>`;
+      document.body.appendChild(modal);
+      let countdown = 5;
+      const interval = setInterval(() => {
+        countdown--;
+        document.getElementById('clear-countdown').textContent = countdown;
+        if (countdown <= 0) {
+          clearInterval(interval);
+          document.getElementById('clear-confirm').disabled = false;
+        }
+      }, 1000);
+      document.getElementById('clear-cancel').addEventListener('click', () => { clearInterval(interval); modal.remove(); });
+      document.getElementById('clear-confirm').addEventListener('click', async () => {
+        const password = modal.querySelector('#clear-password').value;
+        if (!password) { showToast('请输入密码', 'error'); return; }
+        const email = `${AppState.currentProfile.username}@workbuddy.local`;
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) { showToast('密码错误，操作取消', 'error'); return; }
+        const { error: delError } = await supabase.from('students').delete().eq('class_id', AppState.currentProfile.class_id);
+        if (delError) { showToast('清空失败：' + delError.message, 'error'); return; }
+        clearInterval(interval);
+        modal.remove();
+        showToast('已清空所有学生', 'success');
+        loadStudents();
+        loadDashboard();
+      });
+    }
+
+    function openStudentDetail(studentId) {
+      const student = AppState.allStudents.find(s => s.id == studentId);
+      if (!student) return;
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content" style="max-width:700px;"><h3>学生详情 - ${escapeHtml(student.name)}</h3>
+        <div style="color:var(--text-secondary);margin-bottom:10px;">
+          <p>学号：${escapeHtml(student.student_no || '-')} | 性别：${escapeHtml(student.gender || '-')} | 座位：${student.seat || '-'} | 职务：${escapeHtml(student.role || '-')}</p>
+          <p>家长：${escapeHtml(student.parent_name || '-')} | 电话：${escapeHtml(student.parent_phone || '-')} | 住址：${escapeHtml(student.address || '-')}</p>
+        </div>
+        <h4 style="color:#fff;">成长记录</h4>
+        <div id="record-list">加载中...</div>
+        <div class="form-row" style="margin-top:8px;">
+          <select id="record-type" style="max-width:100px;"><option value="talk">谈话</option><option value="discipline">违纪</option><option value="praise">表扬</option></select>
+          <input type="text" id="record-content" placeholder="记录内容" style="flex:2;">
+          <input type="date" id="record-date" style="max-width:130px;">
+          <button class="btn btn-primary btn-sm" id="add-record-btn">添加</button>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" id="analysis-jump-btn">综合分析</button>
+          <button class="btn btn-outline" id="modal-close">关闭</button>
+        </div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('modal-close').addEventListener('click', () => modal.remove());
+      document.getElementById('analysis-jump-btn').addEventListener('click', () => {
+        modal.remove();
+        switchPageWithStudent('analysis', student.id);
+      });
+      loadProfileRecords(student.id, modal.querySelector('#record-list'));
+      modal.querySelector('#add-record-btn').addEventListener('click', async () => {
+        const type = modal.querySelector('#record-type').value;
+        const content = modal.querySelector('#record-content').value.trim();
+        const date = modal.querySelector('#record-date').value || new Date().toISOString().split('T')[0];
+        if (!content) { showToast('请输入内容', 'error'); return; }
+        await supabase.from('profile_records').insert({ student_id: student.id, class_id: AppState.currentProfile.class_id, type, content, record_date: date });
+        modal.querySelector('#record-content').value = '';
+        loadProfileRecords(student.id, modal.querySelector('#record-list'));
+        showToast('成长记录已添加', 'success');
+      });
+    }
+
+    function loadProfileRecords(studentId, container) {
+      supabase.from('profile_records').select('*').eq('student_id', studentId).order('record_date', { ascending: false }).then(({ data, error }) => {
+        if (error) { container.innerHTML = '加载失败'; return; }
+        if (data.length === 0) { container.innerHTML = '<p style="color:var(--text-secondary);">暂无记录</p>'; return; }
+        container.innerHTML = data.map(r => `<div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:6px;margin-bottom:4px;display:flex;justify-content:space-between;"><span>${escapeHtml(r.content)}</span><span style="font-size:11px;color:var(--text-secondary);">${r.record_date} ${r.type}</span></div>`).join('');
+      });
+    }
+
+    function openImportModal() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>批量导入学生</h3>
+        <p style="color:var(--text-secondary);font-size:12px;margin-bottom:8px;">支持CSV/Excel，列顺序：<strong>学号,姓名,性别,座位,职务,家长姓名,家长电话,住址</strong>（表头自动识别）</p>
+        <textarea id="import-csv" rows="5" placeholder="粘贴CSV数据，例如：&#10;2024001,张三,男,1,班长,张父,13800138000,幸福小区" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;padding:10px;"></textarea>
+        <div class="form-row" style="margin-top:8px;"><input type="file" id="import-file" accept=".csv,.xlsx,.xls" style="flex:1;"></div>
+        <div class="modal-actions"><button class="btn btn-outline" id="import-cancel">取消</button><button class="btn btn-primary" id="import-submit">导入</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('import-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('import-submit').addEventListener('click', async () => {
+        const csvText = modal.querySelector('#import-csv').value.trim();
+        const fileInput = modal.querySelector('#import-file');
+        let rows = [];
+        if (csvText) { rows = parseCSV(csvText); }
+        else if (fileInput.files.length > 0) {
+          const file = fileInput.files[0];
+          if (file.name.endsWith('.csv')) { rows = parseCSV(await file.text()); }
+          else { const data = await file.arrayBuffer(); const wb = XLSX.read(data, { type: 'array' }); rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }); }
+        } else { showToast('请输入数据或选择文件', 'error'); return; }
+        if (rows.length === 0) { showToast('没有数据', 'error'); return; }
+        const headerKeywords = ['学号','姓名','性别','座位','职务','家长','电话','住址'];
+        let hasHeader = false;
+        if (rows[0]) {
+          hasHeader = rows[0].some(cell => headerKeywords.some(kw => String(cell).includes(kw)));
+          if (hasHeader) rows.shift();
+        }
+        const studentsToInsert = rows.filter(r => r.length >= 2 && r[1]).map(r => ({
+          student_no: r[0] ? String(r[0]).trim() : null,
+          name: String(r[1]).trim(),
+          gender: r[2] ? String(r[2]).trim() : null,
+          seat: r[3] ? parseInt(r[3]) : null,
+          role: r[4] ? String(r[4]).trim() : null,
+          parent_name: r[5] ? String(r[5]).trim() : null,
+          parent_phone: r[6] ? String(r[6]).trim() : null,
+          address: r[7] ? String(r[7]).trim() : null,
+          class_id: AppState.currentProfile.class_id
+        }));
+        if (studentsToInsert.length === 0) { showToast('没有有效数据', 'error'); return; }
+        const { error } = await supabase.from('students').insert(studentsToInsert);
+        if (error) { showToast('导入失败：' + error.message, 'error'); return; }
+        showToast(`成功导入 ${studentsToInsert.length} 名学生`, 'success');
+        modal.remove(); loadStudents();
+      });
+    }
+
+    // ==================== 座次表（重做版，修复布局） ====================
+    function loadSeating() {
+      const container = document.getElementById('page-seating');
+      container.innerHTML = `
+        <div class="page-header"><h2>座次表</h2><div class="breadcrumb">首页 / 座次表</div></div>
+        <div class="card">
+          <div class="card-header"><h3>座位编排</h3><div class="form-row">
+            <button class="btn btn-primary btn-sm" id="auto-seat-btn"><i class="fa-solid fa-magic"></i> 自动排座</button>
+            <button class="btn btn-outline btn-sm" id="reset-seat-btn"><i class="fa-solid fa-rotate"></i> 清空座位</button>
+            <span style="font-size:11px;color:var(--text-secondary);"><span style="color:#3b82f6;">■</span>男 <span style="color:#ec4899;">■</span>女</span>
+          </div></div>
+          <div style="text-align:center;margin-bottom:10px;"><span style="background:rgba(255,255,255,0.1);padding:5px 20px;border-radius:6px;letter-spacing:2px;font-size:12px;">讲 台</span></div>
+          <div id="seat-grid-container"></div>
+          <p style="margin-top:8px;color:var(--text-secondary);font-size:11px;">1-2列、3-4列、5-6列、7-8列为小组，组间过道。点击学生交换座位。</p>
+        </div>
+        <div class="card"><div class="card-header"><h3>未就座学生</h3></div><div id="unseated-students" class="empty-state"><i class="fa-solid fa-chair"></i><p>暂无未就座学生</p></div></div>`;
+      if (!AppState.currentProfile) return;
+      supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id).order('seat').then(({ data }) => {
+        AppState.allStudents = data; renderSeatGrid(); renderUnseated();
+      });
+      document.getElementById('auto-seat-btn').addEventListener('click', autoSeat);
+      document.getElementById('reset-seat-btn').addEventListener('click', resetSeats);
+    }
+
+    function renderSeatGrid() {
+      const container = document.getElementById('seat-grid-container');
+      container.innerHTML = '';
+      const maxSeat = 64;
+      const seatMap = {};
+      AppState.allStudents.forEach(s => { if (s.seat && s.seat <= 64) seatMap[s.seat] = s; });
+      // 每行8个座位，分4组，每组2个，组间有过道（用divider）
+      let html = '<div class="seat-grid-wrapper">';
+      for (let row = 0; row < 8; row++) {
+        html += '<div class="seat-row">';
+        for (let group = 0; group < 4; group++) {
+          html += '<div class="seat-group">';
+          for (let col = 0; col < 2; col++) {
+            const seatNum = row * 8 + group * 2 + col + 1;
+            if (seatNum > maxSeat) break;
+            const student = seatMap[seatNum];
+            const genderClass = student ? (student.gender === '男' ? 'male' : student.gender === '女' ? 'female' : '') : '';
+            const genderIcon = student ? (student.gender === '男' ? '<i class="fa-solid fa-mars" style="color:#3b82f6;font-size:9px;"></i>' : student.gender === '女' ? '<i class="fa-solid fa-venus" style="color:#ec4899;font-size:9px;"></i>' : '') : '';
+            html += `<div class="seat-item ${student ? '' : 'empty'} ${genderClass}" data-seat="${seatNum}" data-student-id="${student?.id || ''}">
+              ${student ? `<div class="seat-name">${escapeHtml(student.name)}</div><div class="seat-number">座位${seatNum} ${genderIcon}</div>` : `<div class="seat-number">座位${seatNum}</div>`}
+            </div>`;
+          }
+          html += '</div>';
+          if (group < 3) {
+            html += '<div class="seat-group-divider">过道</div>';
+          }
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+      container.innerHTML = html;
+      container.querySelectorAll('.seat-item:not(.empty)').forEach(div => div.addEventListener('click', () => handleSeatClick(div)));
+    }
+
+    function handleSeatClick(div) {
+      const studentId = parseInt(div.dataset.studentId);
+      const student = AppState.allStudents.find(s => s.id === studentId);
+      if (!student) return;
+      if (AppState.selectedStudents.length === 0) { AppState.selectedStudents.push(student); div.classList.add('selected'); }
+      else if (AppState.selectedStudents.length === 1 && AppState.selectedStudents[0].id === student.id) { AppState.selectedStudents = []; div.classList.remove('selected'); }
+      else {
+        const other = AppState.selectedStudents[0];
+        const tempSeat = other.seat; other.seat = student.seat; student.seat = tempSeat;
+        AppState.selectedStudents = [];
+        updateSeatInDatabase(other); updateSeatInDatabase(student);
+        renderSeatGrid(); renderUnseated();
+      }
+    }
+
+    function updateSeatInDatabase(student) {
+      supabase.from('students').update({ seat: student.seat }).eq('id', student.id).then(() => {});
+    }
+
+    function renderUnseated() {
+      const unseated = AppState.allStudents.filter(s => !s.seat || s.seat > 64);
+      const container = document.getElementById('unseated-students');
+      if (unseated.length === 0) { container.innerHTML = '<i class="fa-solid fa-chair"></i><p>暂无未就座学生</p>'; return; }
+      container.innerHTML = unseated.map(s => `<span style="display:inline-block;margin:4px;padding:4px 8px;background:rgba(255,255,255,0.05);border-radius:20px;">${escapeHtml(s.name)}</span>`).join('');
+    }
+
+    function autoSeat() {
+      const students = [...AppState.allStudents];
+      for (let i = students.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [students[i], students[j]] = [students[j], students[i]]; }
+      const updates = students.map((s, idx) => ({ id: s.id, seat: idx + 1 }));
+      Promise.all(updates.map(u => supabase.from('students').update({ seat: u.seat }).eq('id', u.id))).then(() => {
+        showToast('自动排座完成', 'success'); loadSeating();
+      });
+    }
+
+    function resetSeats() {
+      if (!confirm('确定清空所有座位？')) return;
+      Promise.all(AppState.allStudents.map(s => supabase.from('students').update({ seat: null }).eq('id', s.id))).then(() => { showToast('座位已清空', 'success'); loadSeating(); });
+    }
+
+    // ==================== 随机点名 ====================
+    let rollcallTimer = null;
+    let isRolling = false;
+    let calledIds = new Set();
+
+    function loadRollcall() {
+      const container = document.getElementById('page-rollcall');
+      container.innerHTML = `
+        <div class="page-header"><h2>随机点名</h2><div class="breadcrumb">首页 / 随机点名</div></div>
+        <div class="card" style="text-align:center;padding:30px;">
+          <div id="rollcall-display-box" class="rollcall-display-box">准备就绪</div>
+          <div style="margin-bottom:15px;">
+            <button class="btn btn-primary" id="start-rollcall-btn" style="font-size:15px;padding:10px 20px;"><i class="fa-solid fa-play"></i> 开始点名</button>
+            <button class="btn btn-danger" id="stop-rollcall-btn" style="font-size:15px;padding:10px 20px;display:none;"><i class="fa-solid fa-stop"></i> 暂停</button>
+            <button class="btn btn-outline" id="reset-rollcall-btn" style="font-size:15px;padding:10px 20px;"><i class="fa-solid fa-rotate"></i> 重置</button>
+          </div>
+          <div style="color:var(--text-secondary);font-size:13px;margin-bottom:10px;">已点名 <span id="rollcall-count">0</span> 人 / 共 <span id="rollcall-total">0</span> 人</div>
+          <div id="rollcall-history" style="text-align:left;"><h4 style="color:var(--text-secondary);margin-bottom:8px;">点名历史</h4><div id="rollcall-history-list" class="empty-state"><i class="fa-regular fa-clock"></i><p>暂无记录</p></div></div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      loadRollcallHistory();
+      document.getElementById('start-rollcall-btn').addEventListener('click', startRollcall);
+      document.getElementById('stop-rollcall-btn').addEventListener('click', stopRollcall);
+      document.getElementById('reset-rollcall-btn').addEventListener('click', resetRollcall);
+    }
+
+    function startRollcall() {
+      if (isRolling || AppState.allStudents.length === 0) return;
+      const available = AppState.allStudents.filter(s => !calledIds.has(s.id));
+      if (available.length === 0) { resetRollcall(); return; }
+      isRolling = true;
+      document.getElementById('start-rollcall-btn').style.display = 'none';
+      document.getElementById('stop-rollcall-btn').style.display = 'inline-flex';
+      const display = document.getElementById('rollcall-display-box');
+      display.classList.add('rolling');
+      rollcallTimer = setInterval(() => {
+        const random = available[Math.floor(Math.random() * available.length)];
+        display.textContent = random.name;
+      }, 80);
+    }
+
+    function stopRollcall() {
+      if (!isRolling) return;
+      isRolling = false; clearInterval(rollcallTimer);
+      const display = document.getElementById('rollcall-display-box');
+      display.classList.remove('rolling');
+      document.getElementById('start-rollcall-btn').style.display = 'inline-flex';
+      document.getElementById('stop-rollcall-btn').style.display = 'none';
+      const selectedName = display.textContent;
+      const selected = AppState.allStudents.find(s => s.name === selectedName);
+      if (selected) {
+        supabase.from('point_records').insert({ class_id: AppState.currentProfile.class_id, student_id: selected.id, point_date: new Date().toISOString().split('T')[0] }).then(() => { loadRollcallHistory(); });
+        showToast(`点中：${selected.name}`, 'success');
+      }
+    }
+
+    function resetRollcall() {
+      if (isRolling) { clearInterval(rollcallTimer); isRolling = false; }
+      document.getElementById('start-rollcall-btn').style.display = 'inline-flex';
+      document.getElementById('stop-rollcall-btn').style.display = 'none';
+      document.getElementById('rollcall-display-box').classList.remove('rolling');
+      document.getElementById('rollcall-display-box').textContent = '准备就绪';
+      supabase.from('point_records').delete().eq('class_id', AppState.currentProfile.class_id).then(() => { loadRollcallHistory(); });
+    }
+
+    function loadRollcallHistory() {
+      supabase.from('point_records').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).order('created_at', { ascending: false }).limit(30).then(({ data, error }) => {
+        if (error) return;
+        calledIds = new Set(data.map(r => r.student_id));
+        const container = document.getElementById('rollcall-history-list');
+        if (data.length === 0) { container.innerHTML = '<i class="fa-regular fa-clock"></i><p>暂无记录</p>'; }
+        else {
+          container.innerHTML = data.map(r => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><span>${escapeHtml(r.students?.name || '未知')}</span><span style="font-size:10px;color:var(--text-secondary);">${new Date(r.created_at).toLocaleTimeString('zh-CN')}</span></div>`).join('');
+        }
+        document.getElementById('rollcall-count').textContent = data.length;
+        document.getElementById('rollcall-total').textContent = AppState.allStudents.length;
+      });
+    }
+
+    // ==================== 作业管理 ====================
+    let currentHomeworkSubject = '';
+    let currentHomeworkWeek = 'all';
+
+    function loadHomework() {
+      const container = document.getElementById('page-homework');
+      container.innerHTML = `
+        <div class="page-header"><h2>作业管理</h2><div class="breadcrumb">首页 / 作业管理</div></div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-icon"><i class="fa-solid fa-list"></i></div><div class="stat-info"><h4 id="hw-total">0</h4><p>总作业数</p></div></div>
+          <div class="stat-card"><div class="stat-icon green"><i class="fa-solid fa-calendar-week"></i></div><div class="stat-info"><h4 id="hw-week">0</h4><p>本周作业</p></div></div>
+          <div class="stat-card"><div class="stat-icon orange"><i class="fa-solid fa-percent"></i></div><div class="stat-info"><h4 id="hw-submit-rate">-</h4><p>平均提交率</p></div></div>
+          <div class="stat-card"><div class="stat-icon red"><i class="fa-solid fa-clock"></i></div><div class="stat-info"><h4 id="hw-missing">0</h4><p>累计未交人次</p></div></div>
+        </div>
+        <div style="display:flex; gap:15px; flex-wrap:wrap;">
+          <div style="flex:0 0 160px;">
+            <div class="card">
+              <div class="card-header"><h3>学科分类</h3></div>
+              <div id="subject-filter" style="display:flex; flex-direction:column; gap:5px;"></div>
+            </div>
+          </div>
+          <div style="flex:1; min-width:280px;">
+            <div class="card">
+              <div class="card-header">
+                <h3>作业列表</h3>
+                <div class="form-row">
+                  <select id="week-filter" style="max-width:160px;">
+                    <option value="all">全部周次</option>
+                    <option value="current">本周</option>
+                    <option value="last">上周</option>
+                  </select>
+                  <button class="btn btn-primary btn-sm" id="add-homework-btn"><i class="fa-solid fa-plus"></i> 布置作业</button>
+                </div>
+              </div>
+              <div id="homework-list-container"></div>
+            </div>
+          </div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      document.getElementById('add-homework-btn').addEventListener('click', () => openHomeworkModal());
+      document.getElementById('week-filter').addEventListener('change', (e) => {
+        currentHomeworkWeek = e.target.value;
+        renderHomeworkList();
+      });
+      loadHomeworkData();
+    }
+
+    function loadHomeworkData() {
+      supabase.from('homework').select('*').eq('class_id', AppState.currentProfile.class_id).order('created_at', { ascending: false }).then(({ data, error }) => {
+        if (error) { showToast('加载作业失败', 'error'); return; }
+        AppState.homeworkList = data || [];
+        document.getElementById('hw-total').textContent = AppState.homeworkList.length;
+        const now = new Date();
+        const weekAgo = new Date(now.getTime() - 7*24*60*60*1000);
+        document.getElementById('hw-week').textContent = AppState.homeworkList.filter(h => new Date(h.assigned_date) >= weekAgo).length;
+        const homeworkIds = AppState.homeworkList.map(h => h.id);
+        if (homeworkIds.length > 0) {
+          supabase.from('homework_submissions').select('status').in('homework_id', homeworkIds).then(({ data: subs }) => {
+            if (subs && subs.length > 0) {
+              const submitted = subs.filter(s => s.status === 'submitted' || s.status === 'late').length;
+              document.getElementById('hw-submit-rate').textContent = Math.round((submitted / subs.length) * 100) + '%';
+            }
+            document.getElementById('hw-missing').textContent = subs ? subs.filter(s => s.status === 'missing').length : 0;
+          });
+        }
+        const subjects = [...new Set(AppState.homeworkList.map(h => h.subject))];
+        const subjectFilter = document.getElementById('subject-filter');
+        subjectFilter.innerHTML = `<div class="nav-item ${currentHomeworkSubject === '' ? 'active' : ''}" data-subject=""><i class="fa-solid fa-list"></i><span>全部</span></div>`;
+        subjects.forEach(sub => {
+          subjectFilter.innerHTML += `<div class="nav-item ${currentHomeworkSubject === sub ? 'active' : ''}" data-subject="${escapeHtml(sub)}"><i class="fa-solid fa-book"></i><span>${escapeHtml(sub)}</span></div>`;
+        });
+        subjectFilter.querySelectorAll('.nav-item').forEach(el => el.addEventListener('click', () => {
+          currentHomeworkSubject = el.dataset.subject;
+          subjectFilter.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
+          el.classList.add('active');
+          renderHomeworkList();
+        }));
+        renderHomeworkList();
+      });
+    }
+
+    function renderHomeworkList() {
+      let list = AppState.homeworkList;
+      if (currentHomeworkSubject) list = list.filter(h => h.subject === currentHomeworkSubject);
+      if (currentHomeworkWeek === 'current') {
+        const now = new Date(); const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay() + 1);
+        list = list.filter(h => new Date(h.assigned_date) >= weekStart);
+      } else if (currentHomeworkWeek === 'last') {
+        const now = new Date(); const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay() - 6);
+        const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
+        list = list.filter(h => new Date(h.assigned_date) >= weekStart && new Date(h.assigned_date) <= weekEnd);
+      }
+      const container = document.getElementById('homework-list-container');
+      if (list.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fa-solid fa-book-open"></i><p>暂无作业</p></div>'; return; }
+      container.innerHTML = list.map(hw => {
+        const deadline = hw.deadline ? new Date(hw.deadline) : null;
+        const daysLeft = deadline ? Math.ceil((deadline - new Date()) / (24*60*60*1000)) : null;
+        return `<div class="homework-card" data-id="${hw.id}">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span class="hw-subject">${escapeHtml(hw.subject)}</span>
+            <span class="badge ${daysLeft !== null && daysLeft < 0 ? 'badge-danger' : daysLeft !== null && daysLeft <= 2 ? 'badge-warning' : 'badge-info'}">${daysLeft !== null ? (daysLeft < 0 ? '已截止' : `剩余${daysLeft}天`) : '无截止'}</span>
+          </div>
+          <div class="hw-title">${escapeHtml(hw.title)}</div>
+          <div class="hw-meta">布置于 ${hw.assigned_date || '-'}</div>
+        </div>`;
+      }).join('');
+      container.querySelectorAll('.homework-card').forEach(card => card.addEventListener('click', () => openHomeworkDetail(card.dataset.id)));
+    }
+
+    function openHomeworkModal(homeworkId = null) {
+      const hw = homeworkId ? AppState.homeworkList.find(h => h.id == homeworkId) : null;
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>${hw ? '编辑作业' : '布置作业'}</h3>
+        <div class="form-row" style="flex-direction:column;gap:8px;">
+          <input type="text" id="hw-subject" placeholder="科目" value="${hw?.subject || ''}">
+          <input type="text" id="hw-title" placeholder="作业标题" value="${hw?.title || ''}">
+          <textarea id="hw-description" placeholder="作业描述" rows="2">${hw?.description || ''}</textarea>
+          <input type="date" id="hw-deadline" value="${hw?.deadline || ''}">
+        </div>
+        <div class="modal-actions"><button class="btn btn-outline" id="hw-cancel">取消</button><button class="btn btn-primary" id="hw-save">保存</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('hw-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('hw-save').addEventListener('click', async () => {
+        const subject = modal.querySelector('#hw-subject').value.trim();
+        const title = modal.querySelector('#hw-title').value.trim();
+        const description = modal.querySelector('#hw-description').value.trim();
+        const deadline = modal.querySelector('#hw-deadline').value || null;
+        if (!subject || !title) { showToast('科目和标题不能为空', 'error'); return; }
+        if (hw) { await supabase.from('homework').update({ subject, title, description, deadline }).eq('id', hw.id); }
+        else { await supabase.from('homework').insert({ class_id: AppState.currentProfile.class_id, subject, title, description, deadline }); }
+        modal.remove(); showToast('作业已保存', 'success'); loadHomeworkData();
+      });
+    }
+
+    function openHomeworkDetail(homeworkId) {
+      const hw = AppState.homeworkList.find(h => h.id == homeworkId);
+      if (!hw) return;
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content" style="max-width:650px;"><h3>${escapeHtml(hw.subject)}：${escapeHtml(hw.title)}</h3>
+        <p style="color:var(--text-secondary);font-size:12px;margin-bottom:10px;">${escapeHtml(hw.description || '无描述')} | 截止：${hw.deadline || '无'}</p>
+        <div id="submission-detail">加载中...</div>
+        <div class="modal-actions"><button class="btn btn-outline" id="detail-close">关闭</button><button class="btn btn-primary" id="edit-hw-btn">编辑</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('detail-close').addEventListener('click', () => modal.remove());
+      document.getElementById('edit-hw-btn').addEventListener('click', () => { modal.remove(); openHomeworkModal(hw.id); });
+      supabase.from('homework_submissions').select('*, students(name)').eq('homework_id', hw.id).then(({ data }) => {
+        const container = modal.querySelector('#submission-detail');
+        if (!data || data.length === 0) { container.innerHTML = '暂无提交数据'; return; }
+        const statusMap = { submitted: '已交', late: '迟交', missing: '未交' };
+        container.innerHTML = `<div class="table-responsive"><table><thead><tr><th>学生</th><th>状态</th></tr></thead><tbody>${data.map(s => `<tr><td><a href="#" class="sub-student-link" data-id="${s.student_id}">${escapeHtml(s.students?.name || '')}</a></td><td>${statusMap[s.status]}</td></tr>`).join('')}</tbody></table></div>`;
+        container.querySelectorAll('.sub-student-link').forEach(a => a.addEventListener('click', (e) => {
+          e.preventDefault();
+          modal.remove();
+          switchPageWithStudent('analysis', a.dataset.id);
+        }));
+      });
+    }
+    // ==================== 成绩管理 ====================
+    function loadGrades() {
+      const container = document.getElementById('page-grades');
+      container.innerHTML = `
+        <div class="page-header"><h2>成绩管理</h2><div class="breadcrumb">首页 / 成绩管理</div></div>
+        <div class="card">
+          <div class="card-header"><h3>学期管理</h3><button class="btn btn-primary btn-sm" id="add-semester-btn"><i class="fa-solid fa-plus"></i> 新增学期</button></div>
+          <div id="semester-list" class="form-row"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>考试列表</h3><button class="btn btn-primary btn-sm" id="add-exam-btn"><i class="fa-solid fa-plus"></i> 新建考试</button></div>
+          <div id="exam-list" class="empty-state"><i class="fa-solid fa-chart-bar"></i><p>暂无考试</p></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>成绩导入</h3><button class="btn btn-outline btn-sm" id="import-grades-btn"><i class="fa-solid fa-file-import"></i> 导入Excel</button></div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      loadSemesters();
+      document.getElementById('add-semester-btn').addEventListener('click', () => {
+        const modal = document.createElement('div'); modal.className = 'modal-overlay';
+        modal.innerHTML = `<div class="modal-content"><h3>新增学期</h3><div class="form-row" style="flex-direction:column;gap:8px;"><input type="text" id="semester-name" placeholder="学期名称（如2026秋季）"><input type="date" id="semester-start"><input type="date" id="semester-end"></div><div class="modal-actions"><button class="btn btn-outline" id="semester-cancel">取消</button><button class="btn btn-primary" id="semester-save">保存</button></div></div>`;
+        document.body.appendChild(modal);
+        document.getElementById('semester-cancel').addEventListener('click', () => modal.remove());
+        document.getElementById('semester-save').addEventListener('click', async () => {
+          const name = modal.querySelector('#semester-name').value.trim();
+          if (!name) { showToast('请输入学期名称', 'error'); return; }
+          await supabase.from('semesters').insert({ class_id: AppState.currentProfile.class_id, name, start_date: modal.querySelector('#semester-start').value || null, end_date: modal.querySelector('#semester-end').value || null });
+          modal.remove(); showToast('学期已创建', 'success'); loadSemesters();
+        });
+      });
+      document.getElementById('add-exam-btn').addEventListener('click', openExamModal);
+      document.getElementById('import-grades-btn').addEventListener('click', openGradeImportModal);
+      loadExamList();
+    }
+
+    function loadSemesters() {
+      supabase.from('semesters').select('*').eq('class_id', AppState.currentProfile.class_id).order('start_date').then(({ data }) => {
+        const container = document.getElementById('semester-list');
+        if (!data || data.length === 0) {
+          container.innerHTML = '<span style="color:var(--text-secondary);font-size:12px;">暂无学期，请先新增</span>';
+          return;
+        }
+        container.innerHTML = data.map(sem => `<button class="btn btn-sm ${AppState.selectedSemesterId === sem.id ? 'btn-primary' : 'btn-outline'}" data-semester-id="${sem.id}">${escapeHtml(sem.name)}</button>`).join('');
+        container.querySelectorAll('button[data-semester-id]').forEach(btn => btn.addEventListener('click', () => {
+          AppState.selectedSemesterId = btn.dataset.semesterId;
+          container.querySelectorAll('button').forEach(b => b.classList.remove('btn-primary'));
+          btn.classList.add('btn-primary');
+          loadExamList();
+        }));
+      });
+    }
+
+    function loadExamList() {
+      let query = supabase.from('exams').select('*').eq('class_id', AppState.currentProfile.class_id).order('exam_date', { ascending: false });
+      if (AppState.selectedSemesterId) query = query.eq('semester_id', AppState.selectedSemesterId);
+      query.then(({ data }) => {
+        const container = document.getElementById('exam-list');
+        if (!data || data.length === 0) { container.innerHTML = '<i class="fa-solid fa-chart-bar"></i><p>暂无考试</p>'; return; }
+        container.innerHTML = data.map(exam => `<div class="homework-card" data-exam-id="${exam.id}">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-weight:600;">${escapeHtml(exam.exam_name)}</span>
+            <span style="font-size:11px;color:var(--text-secondary);">${exam.exam_date || '-'}</span>
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); openGradeEntry('${exam.id}')">录入/查看</button>
+          <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); deleteExam('${exam.id}')">删除</button>
+        </div>`).join('');
+        container.querySelectorAll('.homework-card').forEach(card => card.addEventListener('click', () => openGradeEntry(card.dataset.examId)));
+      });
+    }
+
+    function openExamModal() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>新建考试</h3>
+        <div class="form-row" style="flex-direction:column;gap:8px;">
+          <input type="text" id="exam-name" placeholder="考试名称">
+          <input type="date" id="exam-date">
+          <select id="exam-type"><option value="monthly">月考</option><option value="midterm">期中</option><option value="final">期末</option><option value="weekly">周考</option><option value="other">其他</option></select>
+          <select id="exam-semester"><option value="">选择学期</option></select>
+        </div>
+        <div class="modal-actions"><button class="btn btn-outline" id="exam-cancel">取消</button><button class="btn btn-primary" id="exam-save">保存</button></div></div>`;
+      document.body.appendChild(modal);
+      supabase.from('semesters').select('*').eq('class_id', AppState.currentProfile.class_id).then(({ data }) => {
+        const select = modal.querySelector('#exam-semester');
+        select.innerHTML = '<option value="">选择学期</option>' + (data || []).map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+      });
+      document.getElementById('exam-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('exam-save').addEventListener('click', async () => {
+        const name = modal.querySelector('#exam-name').value.trim();
+        if (!name) { showToast('请输入名称', 'error'); return; }
+        await supabase.from('exams').insert({ class_id: AppState.currentProfile.class_id, exam_name: name, exam_date: modal.querySelector('#exam-date').value || null, exam_type: modal.querySelector('#exam-type').value, semester_id: modal.querySelector('#exam-semester').value || null });
+        modal.remove(); showToast('考试已创建', 'success'); loadExamList();
+      });
+    }
+
+    function openGradeEntry(examId) {
+      AppState.selectedExamId = examId;
+      Promise.all([
+        supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id).order('seat'),
+        supabase.from('grades').select('*').eq('exam_id', examId)
+      ]).then(([studentsRes, gradesRes]) => {
+        const students = studentsRes.data || [];
+        const grades = gradesRes.data || [];
+        const gradeMap = {};
+        grades.forEach(g => gradeMap[`${g.student_id}_${g.subject}`] = g.score);
+        const subjects = ['语文','数学','英语','物理','化学','生物','政治','历史','地理'];
+        const area = document.createElement('div'); area.className = 'modal-overlay';
+        area.innerHTML = `<div class="modal-content" style="max-width:850px;"><h3>成绩录入与查看</h3>
+          <div class="form-row" style="margin-bottom:10px;">
+            <button class="btn btn-outline btn-sm" id="view-stats-btn">统计图表</button>
+            <button class="btn btn-primary btn-sm" id="grade-save-btn">保存成绩</button>
+          </div>
+          <div class="table-responsive" style="max-height:400px;overflow-y:auto;"><table><thead><tr><th>姓名</th>${subjects.map(s => `<th>${s}</th>`).join('')}<th>总分</th></tr></thead><tbody>${students.map(stu => {
+            let total = 0;
+            const cells = subjects.map(sub => {
+              const val = gradeMap[`${stu.id}_${sub}`] ?? '';
+              if (val !== '') total += parseFloat(val);
+              return `<td><input type="number" class="grade-input" data-student="${stu.id}" data-subject="${sub}" value="${val}" style="width:60px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;padding:4px;"></td>`;
+            }).join('');
+            return `<tr><td><a href="#" class="grade-student-link" data-id="${stu.id}">${escapeHtml(stu.name)}</a></td>${cells}<td>${total}</td></tr>`;
+          }).join('')}</tbody></table></div>
+          <div class="modal-actions"><button class="btn btn-outline" id="grade-close">关闭</button></div></div>`;
+        document.body.appendChild(area);
+        area.querySelector('#grade-close').addEventListener('click', () => area.remove());
+        area.querySelector('#grade-save-btn').addEventListener('click', async () => {
+          const inputs = area.querySelectorAll('.grade-input');
+          const records = [];
+          inputs.forEach(inp => { if (inp.value !== '' && !isNaN(parseFloat(inp.value))) records.push({ class_id: AppState.currentProfile.class_id, exam_id: examId, student_id: parseInt(inp.dataset.student), subject: inp.dataset.subject, score: parseFloat(inp.value) }); });
+          await supabase.from('grades').delete().eq('exam_id', examId);
+          if (records.length) await supabase.from('grades').insert(records);
+          showToast('成绩保存成功', 'success'); area.remove(); loadExamList();
+        });
+        area.querySelector('#view-stats-btn').addEventListener('click', () => showGradeStats(examId, students, gradeMap));
+        area.querySelectorAll('.grade-student-link').forEach(a => a.addEventListener('click', (e) => {
+          e.preventDefault();
+          area.remove();
+          switchPageWithStudent('analysis', a.dataset.id);
+        }));
+      });
+    }
+
+    function showGradeStats(examId, students, gradeMap) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content" style="max-width:700px;"><h3>成绩统计</h3><div id="stats-content">加载中...</div><div class="modal-actions"><button class="btn btn-outline" id="stats-close">关闭</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('stats-close').addEventListener('click', () => modal.remove());
+      const container = modal.querySelector('#stats-content');
+      const subjects = ['语文','数学','英语','物理','化学','生物','政治','历史','地理'];
+      let html = '';
+      subjects.forEach(sub => {
+        const scores = students.map(s => parseFloat(gradeMap[`${s.id}_${sub}`] || '0')).filter(v => !isNaN(v));
+        if (scores.length > 0) {
+          const avg = (scores.reduce((a,b) => a+b, 0) / scores.length).toFixed(1);
+          html += `<p>${sub} 平均分：${avg}</p>`;
+        }
+      });
+      container.innerHTML = html || '暂无数据';
+    }
+
+    function deleteExam(examId) {
+      if (!confirm('确定删除该考试？')) return;
+      supabase.from('exams').delete().eq('id', examId).then(() => { showToast('考试已删除', 'success'); loadExamList(); });
+    }
+
+    function openGradeImportModal() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>导入成绩Excel</h3>
+        <p style="color:var(--text-secondary);font-size:12px;">Excel格式：第一行表头含“姓名”或“学号”，其余列为科目名，成绩按行填入。</p>
+        <select id="import-exam-select" style="width:100%;margin-bottom:8px;"><option value="">选择考试</option></select>
+        <input type="file" id="import-grades-file" accept=".xlsx,.xls" style="width:100%;margin-bottom:8px;">
+        <div class="modal-actions"><button class="btn btn-outline" id="import-grades-cancel">取消</button><button class="btn btn-primary" id="import-grades-submit">导入</button></div></div>`;
+      document.body.appendChild(modal);
+      supabase.from('exams').select('*').eq('class_id', AppState.currentProfile.class_id).then(({ data }) => {
+        const select = modal.querySelector('#import-exam-select');
+        select.innerHTML = '<option value="">选择考试</option>' + (data || []).map(e => `<option value="${e.id}">${escapeHtml(e.exam_name)}</option>`).join('');
+      });
+      document.getElementById('import-grades-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('import-grades-submit').addEventListener('click', async () => {
+        const examId = modal.querySelector('#import-exam-select').value;
+        const file = modal.querySelector('#import-grades-file').files[0];
+        if (!examId || !file) { showToast('请选择考试和文件', 'error'); return; }
+        const data = await file.arrayBuffer();
+        const wb = XLSX.read(data, { type: 'array' });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        if (rows.length < 2) { showToast('数据不足', 'error'); return; }
+        const header = rows[0];
+        const nameIdx = header.findIndex(h => String(h).includes('姓名') || String(h).includes('学号'));
+        if (nameIdx === -1) { showToast('未找到姓名列', 'error'); return; }
+        const subjectIndices = [];
+        header.forEach((h, idx) => { if (idx !== nameIdx) subjectIndices.push({ idx, subject: String(h).trim() }); });
+        const studentsRes = await supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id);
+        const studentList = studentsRes.data || [];
+        const records = [];
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          const studentName = String(row[nameIdx]).trim();
+          const student = studentList.find(s => s.name === studentName || s.student_no === studentName);
+          if (!student) continue;
+          subjectIndices.forEach(({ idx, subject }) => {
+            const score = parseFloat(row[idx]);
+            if (!isNaN(score)) records.push({ class_id: AppState.currentProfile.class_id, exam_id: examId, student_id: student.id, subject, score });
+          });
+        }
+        await supabase.from('grades').delete().eq('exam_id', examId);
+        if (records.length) await supabase.from('grades').insert(records);
+        modal.remove(); showToast(`导入 ${records.length} 条成绩`, 'success'); loadExamList();
+      });
+    }
+
+    // ==================== 课程表（重做版） ====================
+    const SUBJECT_COLORS = {
+      '语文': '#ef4444', '数学': '#3b82f6', '英语': '#10b981', '物理': '#f59e0b',
+      '化学': '#8b5cf6', '生物': '#06b6d4', '政治': '#eab308', '历史': '#a16207',
+      '地理': '#ec4899', '体育': '#22c55e', '音乐': '#f472b6', '美术': '#fb923c',
+      '其他': '#94a3b8'
+    };
+
+    function loadSchedule() {
+      const container = document.getElementById('page-schedule');
+      container.innerHTML = `
+        <div class="page-header"><h2>智能课程表</h2><div class="breadcrumb">首页 / 课程表</div></div>
+        <div class="card">
+          <div class="card-header"><h3>课程表</h3>
+            <div class="form-row">
+              <select id="schedule-view-type" style="max-width:130px;">
+                <option value="class" ${AppState.scheduleView === 'class' ? 'selected' : ''}>班级课表</option>
+                <option value="teacher" ${AppState.scheduleView === 'teacher' ? 'selected' : ''}>教师课表</option>
+              </select>
+              <select id="schedule-week-type" style="max-width:130px;"><option value="both">单双周通用</option><option value="single">单周</option><option value="double">双周</option></select>
+              <button class="btn btn-primary btn-sm" id="edit-schedule-btn"><i class="fa-solid fa-edit"></i> 编辑课程</button>
+              <button class="btn btn-outline btn-sm" id="import-schedule-btn"><i class="fa-solid fa-file-import"></i> 导入</button>
+              <button class="btn btn-outline btn-sm" id="ai-schedule-btn"><i class="fa-solid fa-robot"></i> AI排课建议</button>
+            </div>
+          </div>
+          <div class="table-responsive"><table id="schedule-table"></table></div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      loadScheduleData();
+      document.getElementById('schedule-view-type').addEventListener('change', (e) => { AppState.scheduleView = e.target.value; loadScheduleData(); });
+      document.getElementById('schedule-week-type').addEventListener('change', loadScheduleData);
+      document.getElementById('edit-schedule-btn').addEventListener('click', () => openScheduleEditor());
+      document.getElementById('import-schedule-btn').addEventListener('click', openScheduleImportModal);
+      document.getElementById('ai-schedule-btn').addEventListener('click', aiScheduleSuggest);
+    }
+
+    function loadScheduleData() {
+      const weekType = document.getElementById('schedule-week-type')?.value || 'both';
+      const viewType = AppState.scheduleView;
+      let query = supabase.from('schedule').select('*').eq('class_id', AppState.currentProfile.class_id);
+      if (viewType === 'class') {
+        query = query.or(`week_type.eq.${weekType},week_type.eq.both`);
+      } else {
+        const teacherName = AppState.currentProfile.realname || AppState.currentProfile.username;
+        query = query.eq('teacher_name', teacherName).or(`week_type.eq.${weekType},week_type.eq.both`);
+      }
+      query.then(({ data, error }) => {
+        if (error) { showToast('加载课程表失败', 'error'); return; }
+        const table = document.getElementById('schedule-table');
+        const days = ['周一','周二','周三','周四','周五','周六','周日'];
+        const periods = 8;
+        let html = '<thead><tr><th>节次/时间</th>';
+        days.forEach((d, i) => {
+          const weekend = i >= 5;
+          html += `<th style="${weekend ? 'background:rgba(255,255,255,0.02);' : ''}">${d}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+        for (let period = 1; period <= periods; period++) {
+          html += `<tr><td style="white-space:nowrap;">第${period}节<br><small style="font-size:10px;">${getPeriodTime(period)}</small></td>`;
+          for (let day = 1; day <= 7; day++) {
+            const slot = data.find(s => s.day_of_week === day && s.period === period);
+            const color = slot ? SUBJECT_COLORS[slot.subject] || SUBJECT_COLORS['其他'] : '';
+            const isWeekend = day >= 6;
+            html += `<td style="${isWeekend ? 'background:rgba(255,255,255,0.02);' : ''}">`;
+            if (slot) {
+              html += `<div class="schedule-block" style="background:${color}20;border-left:3px solid ${color};" data-slot-id="${slot.id}">
+                <div class="schedule-subject">${escapeHtml(slot.subject)}</div>
+                <div class="schedule-teacher">${escapeHtml(slot.teacher_name || '')}</div>
+              </div>`;
+            }
+            html += '</td>';
+          }
+          html += '</tr>';
+          if (period === 4) {
+            html += `<tr style="background:rgba(0,0,0,0.2);"><td colspan="8" style="text-align:center;color:var(--text-secondary);font-size:11px;letter-spacing:3px;">午休 12:00 - 14:00</td></tr>`;
+          }
+        }
+        html += '</tbody>';
+        table.innerHTML = html;
+        table.querySelectorAll('.schedule-block').forEach(block => block.addEventListener('click', () => openScheduleEditor(block.dataset.slotId)));
+      });
+    }
+
+    function getPeriodTime(period) {
+      const times = {
+        1: '8:00-8:45', 2: '8:55-9:40', 3: '9:50-10:35', 4: '10:45-11:30',
+        5: '14:00-14:45', 6: '14:55-15:40', 7: '15:50-16:35', 8: '16:45-17:30'
+      };
+      return times[period] || '';
+    }
+
+    function openScheduleEditor(slotId = null) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>编辑课程</h3>
+        <div class="form-row" style="flex-direction:column;gap:8px;">
+          <select id="edit-day"><option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="7">周日</option></select>
+          <input type="number" id="edit-period" placeholder="节次(1-8)" min="1" max="8">
+          <input type="text" id="edit-subject" placeholder="课程名称">
+          <input type="text" id="edit-teacher" placeholder="任课教师">
+          <select id="edit-week-type"><option value="both">单双周通用</option><option value="single">单周</option><option value="double">双周</option></select>
+        </div>
+        <div class="modal-actions"><button class="btn btn-outline" id="edit-cancel">取消</button><button class="btn btn-primary" id="edit-save">保存</button></div></div>`;
+      document.body.appendChild(modal);
+      if (slotId) {
+        supabase.from('schedule').select('*').eq('id', slotId).single().then(({ data }) => {
+          if (data) {
+            modal.querySelector('#edit-day').value = data.day_of_week;
+            modal.querySelector('#edit-period').value = data.period;
+            modal.querySelector('#edit-subject').value = data.subject;
+            modal.querySelector('#edit-teacher').value = data.teacher_name || '';
+            modal.querySelector('#edit-week-type').value = data.week_type;
+          }
+        });
+      }
+      document.getElementById('edit-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('edit-save').addEventListener('click', async () => {
+        const day = parseInt(modal.querySelector('#edit-day').value);
+        const period = parseInt(modal.querySelector('#edit-period').value);
+        const subject = modal.querySelector('#edit-subject').value.trim();
+        const teacher = modal.querySelector('#edit-teacher').value.trim();
+        const weekType = modal.querySelector('#edit-week-type').value;
+        if (!subject || !period) { showToast('请填写完整', 'error'); return; }
+        if (slotId) {
+          await supabase.from('schedule').update({ day_of_week: day, period, subject, teacher_name: teacher || null, week_type: weekType }).eq('id', slotId);
+        } else {
+          await supabase.from('schedule').upsert({ class_id: AppState.currentProfile.class_id, day_of_week: day, period, subject, teacher_name: teacher || null, week_type: weekType }, { onConflict: 'class_id,day_of_week,period,week_type' });
+        }
+        modal.remove(); showToast('课程已更新', 'success'); loadScheduleData();
+      });
+    }
+
+    function openScheduleImportModal() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>导入课程表Excel</h3>
+        <p style="color:var(--text-secondary);font-size:12px;">Excel格式：第一行为节次，第一列为星期，交叉单元格填课程名称。可含教师名（如“语文(张老师)”）。</p>
+        <input type="file" id="import-schedule-file" accept=".xlsx,.xls" style="width:100%;margin-bottom:8px;">
+        <div class="modal-actions"><button class="btn btn-outline" id="import-schedule-cancel">取消</button><button class="btn btn-primary" id="import-schedule-submit">导入</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('import-schedule-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('import-schedule-submit').addEventListener('click', async () => {
+        const file = modal.querySelector('#import-schedule-file').files[0];
+        if (!file) { showToast('请选择文件', 'error'); return; }
+        const data = await file.arrayBuffer();
+        const wb = XLSX.read(data, { type: 'array' });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        const records = [];
+        const dayMap = { '周一': 1, '星期二': 2, '周三': 3, '周四': 4, '周五': 5, '周六': 6, '周日': 7 };
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row[0]) continue;
+          const dayStr = String(row[0]).trim();
+          let day = dayMap[dayStr] || parseInt(dayStr);
+          if (!day || day < 1 || day > 7) continue;
+          for (let j = 1; j < row.length; j++) {
+            const cell = String(row[j] || '').trim();
+            if (!cell) continue;
+            const period = j;
+            let subject = cell;
+            let teacher = null;
+            const match = cell.match(/^(.+?)\((.+?)\)$/);
+            if (match) { subject = match[1].trim(); teacher = match[2].trim(); }
+            records.push({ class_id: AppState.currentProfile.class_id, day_of_week: day, period, subject, teacher_name: teacher, week_type: 'both' });
+          }
+        }
+        if (records.length === 0) { showToast('未识别到课程', 'error'); return; }
+        await supabase.from('schedule').delete().eq('class_id', AppState.currentProfile.class_id);
+        await supabase.from('schedule').insert(records);
+        modal.remove(); showToast(`导入 ${records.length} 条课程`, 'success'); loadScheduleData();
+      });
+    }
+
+    async function aiScheduleSuggest() {
+      const result = await callAI('schedule_suggest', { prompt: '请根据一般初中或高中课程设置，提供一份合理的课程表排布建议，包含每天8节课，周一至周五。' });
+      if (result) {
+        const modal = document.createElement('div'); modal.className = 'modal-overlay';
+        modal.innerHTML = `<div class="modal-content"><h3>AI 排课建议</h3><pre style="white-space:pre-wrap;color:#fff;">${escapeHtml(result)}</pre><div class="modal-actions"><button class="btn btn-outline" id="ai-close">关闭</button></div></div>`;
+        document.body.appendChild(modal);
+        document.getElementById('ai-close').addEventListener('click', () => modal.remove());
+      }
+    }
+
+    // ==================== 考勤管理 ====================
+    function loadAttendance() {
+      const container = document.getElementById('page-attendance');
+      container.innerHTML = `
+        <div class="page-header"><h2>考勤管理</h2><div class="breadcrumb">首页 / 考勤管理</div></div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-icon"><i class="fa-solid fa-calendar-check"></i></div><div class="stat-info"><h4 id="att-today-rate">-</h4><p>今日出勤率</p></div></div>
+          <div class="stat-card"><div class="stat-icon green"><i class="fa-solid fa-user-clock"></i></div><div class="stat-info"><h4 id="att-month-rate">-</h4><p>本月出勤率</p></div></div>
+          <div class="stat-card"><div class="stat-icon orange"><i class="fa-solid fa-user-xmark"></i></div><div class="stat-info"><h4 id="att-absent-count">0</h4><p>本月缺勤</p></div></div>
+          <div class="stat-card"><div class="stat-icon red"><i class="fa-solid fa-file-medical"></i></div><div class="stat-info"><h4 id="att-leave-count">0</h4><p>本月请假</p></div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+          <div class="card">
+            <div class="card-header"><h3>每日考勤</h3><div class="form-row"><input type="date" id="attendance-date" style="max-width:140px;"><button class="btn btn-primary btn-sm" id="load-attendance-btn">加载</button><button class="btn btn-success btn-sm" id="save-attendance-btn">保存</button></div></div>
+            <div class="table-responsive" style="max-height:400px;overflow-y:auto;"><table><thead><tr><th>姓名</th><th>状态</th></tr></thead><tbody id="attendance-tbody"></tbody></table></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>请假管理</h3><button class="btn btn-primary btn-sm" id="add-leave-btn"><i class="fa-solid fa-plus"></i> 新增</button></div>
+            <div class="table-responsive" style="max-height:400px;overflow-y:auto;"><table><thead><tr><th>学生</th><th>日期</th><th>状态</th><th>操作</th></tr></thead><tbody id="leaves-tbody"></tbody></table></div>
+          </div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      const dateInput = document.getElementById('attendance-date');
+      if (!dateInput.value) dateInput.value = new Date().toISOString().split('T')[0];
+      loadAttendanceData();
+      loadLeaves();
+      loadAttendanceStats();
+      document.getElementById('load-attendance-btn').addEventListener('click', loadAttendanceData);
+      document.getElementById('save-attendance-btn').addEventListener('click', saveAttendance);
+      document.getElementById('add-leave-btn').addEventListener('click', openLeaveModal);
+    }
+
+    function loadAttendanceData() {
+      const date = document.getElementById('attendance-date').value;
+      if (!date) return;
+      Promise.all([
+        supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id).order('seat'),
+        supabase.from('attendance').select('*').eq('class_id', AppState.currentProfile.class_id).eq('date', date)
+      ]).then(([studentsRes, attRes]) => {
+        AppState.attendanceStudents = studentsRes.data || [];
+        const recordMap = {};
+        (attRes.data || []).forEach(r => recordMap[r.student_id] = r.status);
+        const tbody = document.getElementById('attendance-tbody');
+        tbody.innerHTML = '';
+        AppState.attendanceStudents.forEach(s => {
+          const status = recordMap[s.id] || 'present';
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td><a href="#" class="att-student-link" data-id="${s.id}">${escapeHtml(s.name)}</a></td><td><select class="att-status-select" data-student-id="${s.id}" style="padding:4px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;"><option value="present" ${status === 'present' ? 'selected' : ''}>出勤</option><option value="late" ${status === 'late' ? 'selected' : ''}>迟到</option><option value="absent" ${status === 'absent' ? 'selected' : ''}>缺勤</option><option value="leave" ${status === 'leave' ? 'selected' : ''}>请假</option></select></td>`;
+          tbody.appendChild(tr);
+        });
+        tbody.querySelectorAll('.att-student-link').forEach(a => a.addEventListener('click', (e) => {
+          e.preventDefault();
+          switchPageWithStudent('analysis', a.dataset.id);
+        }));
+      });
+    }
+
+    function saveAttendance() {
+      const date = document.getElementById('attendance-date').value;
+      const selects = document.querySelectorAll('.att-status-select');
+      const records = Array.from(selects).map(sel => ({ class_id: AppState.currentProfile.class_id, student_id: parseInt(sel.dataset.studentId), date, status: sel.value }));
+      supabase.from('attendance').upsert(records, { onConflict: 'class_id,student_id,date' }).then(() => {
+        showToast('考勤保存成功！', 'success'); loadAttendanceStats(); loadDashboard();
+      });
+    }
+
+    function loadAttendanceStats() {
+      const today = new Date().toISOString().split('T')[0];
+      const monthStart = new Date(); monthStart.setDate(1); const monthStartStr = monthStart.toISOString().split('T')[0];
+      Promise.all([
+        supabase.from('students').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id),
+        supabase.from('attendance').select('status').eq('class_id', AppState.currentProfile.class_id).eq('date', today),
+        supabase.from('attendance').select('status').eq('class_id', AppState.currentProfile.class_id).gte('date', monthStartStr)
+      ]).then(([studentRes, todayAttRes, monthAttRes]) => {
+        const totalStudents = studentRes.count || 0;
+        const todayAtt = todayAttRes.data || [];
+        const monthAtt = monthAttRes.data || [];
+        if (totalStudents > 0 && todayAtt.length > 0) {
+          const present = todayAtt.filter(a => a.status === 'present' || a.status === 'late').length;
+          document.getElementById('att-today-rate').textContent = Math.round((present / totalStudents) * 100) + '%';
+        } else document.getElementById('att-today-rate').textContent = '-';
+        if (monthAtt.length > 0) {
+          const presentRecords = monthAtt.filter(a => a.status === 'present' || a.status === 'late').length;
+          document.getElementById('att-month-rate').textContent = Math.round((presentRecords / monthAtt.length) * 100) + '%';
+          document.getElementById('att-absent-count').textContent = monthAtt.filter(a => a.status === 'absent').length;
+          document.getElementById('att-leave-count').textContent = monthAtt.filter(a => a.status === 'leave').length;
+        }
+      });
+    }
+
+    function loadLeaves() {
+      supabase.from('leaves').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).order('date', { ascending: false }).then(({ data }) => {
+        const tbody = document.getElementById('leaves-tbody');
+        tbody.innerHTML = '';
+        (data || []).forEach(l => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${escapeHtml(l.students?.name || '未知')}</td><td>${l.date}</td><td><span class="badge ${l.status === 'approved' ? 'badge-success' : l.status === 'rejected' ? 'badge-danger' : 'badge-warning'}">${l.status === 'pending' ? '待审批' : l.status === 'approved' ? '已批准' : '已拒绝'}</span></td><td>${l.status === 'pending' ? `<button class="btn btn-sm btn-success approve-leave" data-id="${l.id}">批</button> <button class="btn btn-sm btn-danger reject-leave" data-id="${l.id}">拒</button>` : '-'}</td>`;
+          tbody.appendChild(tr);
+        });
+        tbody.querySelectorAll('.approve-leave').forEach(btn => btn.addEventListener('click', () => updateLeaveStatus(btn.dataset.id, 'approved')));
+        tbody.querySelectorAll('.reject-leave').forEach(btn => btn.addEventListener('click', () => updateLeaveStatus(btn.dataset.id, 'rejected')));
+      });
+    }
+
+    function updateLeaveStatus(id, status) {
+      supabase.from('leaves').update({ status }).eq('id', id).then(() => { showToast('请假状态已更新', 'success'); loadLeaves(); });
+    }
+
+    function openLeaveModal() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>新增请假</h3><div class="form-row" style="flex-direction:column;gap:8px;"><select id="leave-student"><option value="">选择学生</option>${AppState.attendanceStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}</select><input type="date" id="leave-date" value="${new Date().toISOString().split('T')[0]}"><input type="text" id="leave-reason" placeholder="请假原因"></div><div class="modal-actions"><button class="btn btn-outline" id="leave-cancel">取消</button><button class="btn btn-primary" id="leave-save">保存</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('leave-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('leave-save').addEventListener('click', async () => {
+        const student_id = modal.querySelector('#leave-student').value;
+        const date = modal.querySelector('#leave-date').value;
+        const reason = modal.querySelector('#leave-reason').value.trim();
+        if (!student_id || !date) { showToast('请选择学生和日期', 'error'); return; }
+        await supabase.from('leaves').insert({ class_id: AppState.currentProfile.class_id, student_id: parseInt(student_id), date, reason: reason || null });
+        modal.remove(); showToast('请假记录已添加', 'success'); loadLeaves();
+      });
+    }
+
+    // ==================== 期末评语（AI + 头像墙） ====================
+    function loadComments() {
+      const container = document.getElementById('page-comments');
+      container.innerHTML = `
+        <div class="page-header"><h2>期末评语</h2><div class="breadcrumb">首页 / 期末评语</div></div>
+        <div class="card">
+          <div class="card-header"><h3>生成评语</h3><div class="form-row">
+            <select id="comment-mode" style="max-width:160px;"><option value="local">本地模板</option><option value="ai">AI智能生成</option></select>
+            <button class="btn btn-primary btn-sm" id="generate-comments-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> 生成</button>
+            <button class="btn btn-outline btn-sm" id="copy-comments-btn"><i class="fa-solid fa-copy"></i> 复制全部</button>
+          </div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>学生评语墙</h3></div>
+          <div id="comments-avatar-wall" class="avatar-wall"></div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      document.getElementById('generate-comments-btn').addEventListener('click', generateComments);
+      document.getElementById('copy-comments-btn').addEventListener('click', copyComments);
+      renderAvatarWall();
+    }
+
+    function renderAvatarWall() {
+      const container = document.getElementById('comments-avatar-wall');
+      if (AppState.allStudents.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fa-solid fa-users"></i><p>暂无学生</p></div>'; return; }
+      const colors = ['#6d5dfc','#10b981','#f59e0b','#ef4444','#3b82f6','#ec4899','#8b5cf6','#06b6d4'];
+      container.innerHTML = AppState.allStudents.map((s, idx) => {
+        const color = colors[idx % colors.length];
+        return `<div class="avatar-item" data-student-id="${s.id}">
+          <div class="avatar-circle" style="background:${color};">${escapeHtml(s.name.charAt(0))}</div>
+          <span>${escapeHtml(s.name)}</span>
+        </div>`;
+      }).join('');
+      container.querySelectorAll('.avatar-item').forEach(item => item.addEventListener('click', () => {
+        showStudentComment(item.dataset.studentId);
+      }));
+    }
+
+    function showStudentComment(studentId) {
+      const student = AppState.allStudents.find(s => s.id == studentId);
+      if (!student) return;
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>${escapeHtml(student.name)} 的评语</h3><div id="comment-detail">加载中...</div><div class="modal-actions"><button class="btn btn-outline" id="comment-close">关闭</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('comment-close').addEventListener('click', () => modal.remove());
+      supabase.from('ai_reports').select('*').eq('student_id', studentId).eq('type', 'comment').maybeSingle().then(({ data }) => {
+        const container = modal.querySelector('#comment-detail');
+        if (data) {
+          container.innerHTML = `<p>${escapeHtml(data.content)}</p>`;
+        } else {
+          container.innerHTML = `<p>暂无评语，请先生成</p>`;
+        }
+      });
+    }
+
+    async function generateComments() {
+      const mode = document.getElementById('comment-mode').value;
+      if (AppState.allStudents.length === 0) { showToast('没有学生', 'error'); return; }
+      if (mode === 'local') {
+        const templates = ['学习认真，成绩稳定。','乐于助人，团结同学。','课堂表现积极，思维活跃。','作业完成及时，质量较高。','遵守纪律，尊敬师长。'];
+        AppState.commentList = AppState.allStudents.map(s => ({ student: s.name, comment: `${s.name}同学，${templates[Math.floor(Math.random()*templates.length)]}` }));
+        AppState.allStudents.forEach(s => {
+          const comment = AppState.commentList.find(c => c.student === s.name)?.comment || '';
+          supabase.from('ai_reports').upsert({ class_id: AppState.currentProfile.class_id, student_id: s.id, type: 'comment', content: comment });
+        });
+        showToast('已生成本地评语', 'success');
+      } else {
+        showToast('正在调用AI生成，请稍候...', 'warning');
+        const results = await Promise.all(AppState.allStudents.map(async (s) => {
+          const payload = {
+            name: s.name,
+            gender: s.gender,
+            role: s.role,
+          };
+          const content = await callAI('comment', payload);
+          if (content) {
+            await supabase.from('ai_reports').upsert({ class_id: AppState.currentProfile.class_id, student_id: s.id, type: 'comment', content });
+          }
+          return { student: s.name, comment: content || '暂无' };
+        }));
+        AppState.commentList = results;
+        showToast('AI评语生成完成', 'success');
+      }
+      renderAvatarWall();
+    }
+
+    function copyComments() {
+      if (AppState.commentList.length === 0) { showToast('暂无评语', 'warning'); return; }
+      const text = AppState.commentList.map(c => `${c.student}：${c.comment}`).join('\n');
+      navigator.clipboard.writeText(text).then(() => showToast('已复制', 'success'));
+    }
+
+    // ==================== 学生综合分析（增强版） ====================
+    function loadAnalysis() {
+      const container = document.getElementById('page-analysis');
+      container.innerHTML = `
+        <div class="page-header"><h2>学生综合分析</h2><div class="breadcrumb">首页 / 综合分析</div></div>
+        <div class="card"><div class="form-row">
+          <select id="analysis-student-select" style="max-width:250px;"><option value="">请选择学生</option>${AppState.allStudents.map(s => `<option value="${s.id}" ${AppState.selectedStudentId == s.id ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}</select>
+          <button class="btn btn-primary btn-sm" id="ai-analysis-btn"><i class="fa-solid fa-robot"></i> AI深度分析</button>
+        </div></div>
+        <div id="analysis-content" class="empty-state"><i class="fa-solid fa-user-graduate"></i><p>请选择学生</p></div>`;
+      if (AppState.selectedStudentId) {
+        document.getElementById('analysis-student-select').value = AppState.selectedStudentId;
+        loadAnalysisData(AppState.selectedStudentId);
+      }
+      document.getElementById('analysis-student-select').addEventListener('change', (e) => {
+        AppState.selectedStudentId = e.target.value;
+        if (e.target.value) loadAnalysisData(e.target.value);
+        else document.getElementById('analysis-content').innerHTML = '<div class="empty-state"><i class="fa-solid fa-user-graduate"></i><p>请选择学生</p></div>';
+      });
+      document.getElementById('ai-analysis-btn').addEventListener('click', () => {
+        if (AppState.selectedStudentId) generateAIAnalysis(AppState.selectedStudentId);
+        else showToast('请先选择学生', 'error');
+      });
+    }
+
+    function loadAnalysisData(studentId) {
+      const student = AppState.allStudents.find(s => s.id == studentId);
+      if (!student) return;
+      const container = document.getElementById('analysis-content');
+      container.innerHTML = '加载中...';
+      Promise.all([
+        supabase.from('grades').select('*').eq('student_id', studentId),
+        supabase.from('profile_records').select('*').eq('student_id', studentId).order('record_date', { ascending: false }),
+        supabase.from('attendance').select('*').eq('student_id', studentId),
+        supabase.from('ai_reports').select('*').eq('student_id', studentId).eq('type', 'analysis').maybeSingle()
+      ]).then(([gradesRes, recordsRes, attendanceRes, aiReportRes]) => {
+        const grades = gradesRes.data || [];
+        const records = recordsRes.data || [];
+        const aiReport = aiReportRes.data;
+        let html = '';
+        const colors = ['#6d5dfc','#10b981','#f59e0b','#ef4444','#3b82f6','#ec4899','#8b5cf6','#06b6d4'];
+        const color = colors[Math.floor(Math.random()*colors.length)];
+        html += `<div class="card" style="display:flex;align-items:center;gap:15px;">
+          <div class="avatar-circle" style="background:${color};width:60px;height:60px;font-size:24px;">${escapeHtml(student.name.charAt(0))}</div>
+          <div style="flex:1;">
+            <h3 style="color:#fff;">${escapeHtml(student.name)}</h3>
+            <p style="color:var(--text-secondary);font-size:12px;">学号: ${escapeHtml(student.student_no||'-')} | 性别: ${escapeHtml(student.gender||'-')} | 座位: ${student.seat||'-'} | 职务: ${escapeHtml(student.role||'-')}</p>
+          </div>
+          <span class="badge badge-info">综合等级: 待评估</span>
+        </div>`;
+        if (grades.length > 0) {
+          const subjects = ['语文','数学','英语','物理','化学','生物','政治','历史','地理'];
+          const studentScores = subjects.map(sub => {
+            const latest = grades.filter(g => g.subject === sub).sort((a,b) => b.id - a.id)[0];
+            return latest ? parseFloat(latest.score) : 0;
+          });
+          html += `<div class="card"><h4 style="color:#fff;">能力雷达图</h4><canvas id="analysis-radar" height="200"></canvas></div>`;
+          setTimeout(() => {
+            const ctx = document.getElementById('analysis-radar');
+            if (ctx) {
+              new Chart(ctx, {
+                type: 'radar',
+                data: {
+                  labels: subjects,
+                  datasets: [{
+                    label: '学生得分',
+                    data: studentScores,
+                    borderColor: '#6d5dfc',
+                    backgroundColor: 'rgba(109,93,252,0.2)'
+                  }]
+                },
+                options: { responsive: true, scales: { r: { beginAtZero: true, max: 100 } } }
+              });
+            }
+          }, 100);
+        }
+        if (records.length > 0) {
+          html += `<div class="card"><h4 style="color:#fff;">成长记录时间轴</h4>`;
+          records.slice(0, 10).forEach(r => {
+            const typeColor = r.type === 'praise' ? '#10b981' : r.type === 'discipline' ? '#ef4444' : '#3b82f6';
+            html += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:5px;"><span style="width:10px;height:10px;border-radius:50%;background:${typeColor};"></span><span>${escapeHtml(r.content)}</span><span style="font-size:10px;color:var(--text-secondary);margin-left:auto;">${r.record_date}</span></div>`;
+          });
+          html += '</div>';
+        }
+        if (aiReport) {
+          html += `<div class="card"><h4 style="color:#fff;">AI 分析报告</h4><p>${escapeHtml(aiReport.content)}</p></div>`;
+        }
+        container.innerHTML = html;
+      });
+    }
+
+    async function generateAIAnalysis(studentId) {
+      const student = AppState.allStudents.find(s => s.id == studentId);
+      if (!student) return;
+      showToast('正在生成AI分析，请稍候...', 'warning');
+      const payload = {
+        name: student.name,
+        gender: student.gender,
+        role: student.role,
+      };
+      const content = await callAI('analysis', payload);
+      if (content) {
+        await supabase.from('ai_reports').upsert({ class_id: AppState.currentProfile.class_id, student_id: studentId, type: 'analysis', content });
+        loadAnalysisData(studentId);
+        showToast('AI分析完成', 'success');
+      }
+    }
+
+    // ==================== 班级评价 ====================
+    function loadEvaluation() {
+      const container = document.getElementById('page-evaluation');
+      container.innerHTML = `
+        <div class="page-header"><h2>班级评价</h2><div class="breadcrumb">首页 / 班级评价</div></div>
+        <div class="card">
+          <div class="form-row">
+            <select id="eval-student" style="max-width:130px;"><option value="">选择学生</option>${AppState.allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}</select>
+            <select id="eval-dimension" style="max-width:130px;"><option value="class_performance">课堂表现</option><option value="homework">作业情况</option><option value="behavior">行为习惯</option><option value="activity">活动参与</option></select>
+            <input type="text" id="eval-content" placeholder="评价内容" style="flex:2;">
+            <button class="btn btn-primary btn-sm" id="add-eval-btn">添加</button>
+          </div>
+        </div>
+        <div class="card"><div id="eval-list" class="empty-state"><i class="fa-solid fa-star"></i><p>暂无评价</p></div></div>`;
+      document.getElementById('add-eval-btn').addEventListener('click', async () => {
+        const student_id = document.getElementById('eval-student').value;
+        const content = document.getElementById('eval-content').value.trim();
+        if (!student_id || !content) { showToast('请填写完整', 'error'); return; }
+        await supabase.from('eval_records').insert({ class_id: AppState.currentProfile.class_id, student_id: parseInt(student_id), dimension: document.getElementById('eval-dimension').value, content, eval_date: new Date().toISOString().split('T')[0] });
+        document.getElementById('eval-content').value = ''; showToast('评价已添加', 'success'); loadEvalList();
+      });
+      loadEvalList();
+    }
+
+    function loadEvalList() {
+      supabase.from('eval_records').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).order('created_at', { ascending: false }).limit(20).then(({ data }) => {
+        const container = document.getElementById('eval-list');
+        if (!data || data.length === 0) return;
+        container.innerHTML = data.map(r => `<div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px;margin-bottom:4px;display:flex;justify-content:space-between;"><span><a href="#" class="eval-student-link" data-id="${r.student_id}"><strong>${escapeHtml(r.students?.name || '')}</strong></a>：${escapeHtml(r.content)}</span><span style="font-size:10px;color:var(--text-secondary);">${r.eval_date || ''}</span></div>`).join('');
+        container.querySelectorAll('.eval-student-link').forEach(a => a.addEventListener('click', (e) => {
+          e.preventDefault();
+          switchPageWithStudent('analysis', a.dataset.id);
+        }));
+      });
+    }
+
+    // ==================== 家校沟通（卡片+详情） ====================
+    function loadCommunication() {
+      const container = document.getElementById('page-communication');
+      container.innerHTML = `
+        <div class="page-header"><h2>家校沟通</h2><div class="breadcrumb">首页 / 家校沟通</div></div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-icon"><i class="fa-solid fa-address-book"></i></div><div class="stat-info"><h4 id="comm-contact-rate">-</h4><p>台账完整度</p></div></div>
+          <div class="stat-card"><div class="stat-icon green"><i class="fa-solid fa-house-chimney"></i></div><div class="stat-info"><h4 id="comm-visit-count">0</h4><p>家访次数</p></div></div>
+          <div class="stat-card"><div class="stat-icon orange"><i class="fa-solid fa-users-rectangle"></i></div><div class="stat-info"><h4 id="comm-meeting-count">0</h4><p>家长会</p></div></div>
+          <div class="stat-card"><div class="stat-icon red"><i class="fa-solid fa-bullhorn"></i></div><div class="stat-info"><h4 id="comm-notice-count">0</h4><p>群通知</p></div></div>
+        </div>
+        <div class="comm-card-list">
+          <div class="comm-card" onclick="openCommDetail('contacts')"><h4><i class="fa-solid fa-address-book"></i> 家长台账</h4><p id="comm-contacts-preview">加载中...</p></div>
+          <div class="comm-card" onclick="openCommDetail('visits')"><h4><i class="fa-solid fa-house-chimney"></i> 家访记录</h4><p id="comm-visits-preview">加载中...</p></div>
+          <div class="comm-card" onclick="openCommDetail('meetings')"><h4><i class="fa-solid fa-users-rectangle"></i> 家长会记录</h4><p id="comm-meetings-preview">加载中...</p></div>
+          <div class="comm-card" onclick="openCommDetail('notices')"><h4><i class="fa-solid fa-bullhorn"></i> 群通知</h4><p id="comm-group-notices-preview">加载中...</p></div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      loadCommStats();
+      loadCommPreviews();
+    }
+
+    function loadCommStats() {
+      Promise.all([
+        supabase.from('parent_contacts').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id),
+        supabase.from('students').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id),
+        supabase.from('home_visits').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id),
+        supabase.from('parent_meetings').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id),
+        supabase.from('group_notices').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id)
+      ]).then(([contactRes, studentRes, visitRes, meetingRes, noticeRes]) => {
+        const studentCount = studentRes.count || 0;
+        const contactCount = contactRes.count || 0;
+        document.getElementById('comm-contact-rate').textContent = studentCount > 0 ? Math.round((contactCount / studentCount) * 100) + '%' : '-';
+        document.getElementById('comm-visit-count').textContent = visitRes.count || 0;
+        document.getElementById('comm-meeting-count').textContent = meetingRes.count || 0;
+        document.getElementById('comm-notice-count').textContent = noticeRes.count || 0;
+      });
+    }
+
+    function loadCommPreviews() {
+      supabase.from('parent_contacts').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).limit(3).then(({ data }) => {
+        document.getElementById('comm-contacts-preview').textContent = data && data.length > 0 ? data.map(c => c.students?.name).join('、') + ' 等' : '暂无记录';
+      });
+      supabase.from('home_visits').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).limit(3).then(({ data }) => {
+        document.getElementById('comm-visits-preview').textContent = data && data.length > 0 ? data.map(v => v.students?.name).join('、') + ' 等' : '暂无记录';
+      });
+      supabase.from('parent_meetings').select('*').eq('class_id', AppState.currentProfile.class_id).limit(3).then(({ data }) => {
+        document.getElementById('comm-meetings-preview').textContent = data && data.length > 0 ? data.map(m => m.theme).join('、') : '暂无记录';
+      });
+      supabase.from('group_notices').select('*').eq('class_id', AppState.currentProfile.class_id).limit(3).then(({ data }) => {
+        document.getElementById('comm-group-notices-preview').textContent = data && data.length > 0 ? data.map(n => n.content).join('、') : '暂无记录';
+      });
+    }
+
+    window.openCommDetail = function(type) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      const titles = { contacts: '家长台账', visits: '家访记录', meetings: '家长会记录', notices: '群通知' };
+      modal.innerHTML = `<div class="modal-content" style="max-width:750px;"><h3>${titles[type]}</h3><div id="comm-detail-content">加载中...</div><div class="modal-actions"><button class="btn btn-outline" id="comm-close">关闭</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('comm-close').addEventListener('click', () => modal.remove());
+      const content = modal.querySelector('#comm-detail-content');
+      if (type === 'contacts') loadContactsDetail(content);
+      else if (type === 'visits') loadVisitsDetail(content);
+      else if (type === 'meetings') loadMeetingsDetail(content);
+      else if (type === 'notices') loadGroupNoticesDetail(content);
+    };
+
+    function loadContactsDetail(container) {
+      supabase.from('parent_contacts').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).then(({ data }) => {
+        container.innerHTML = `<button class="btn btn-primary btn-sm" id="add-contact-btn" style="margin-bottom:8px;"><i class="fa-solid fa-plus"></i> 添加</button><div class="table-responsive"><table><thead><tr><th>学生</th><th>家长</th><th>关系</th><th>电话</th><th>操作</th></tr></thead><tbody>${data.map(c => `<tr><td><a href="#" class="contact-student-link" data-id="${c.student_id}">${escapeHtml(c.students?.name || '')}</a></td><td>${escapeHtml(c.parent_name || '-')}</td><td>${escapeHtml(c.relation || '-')}</td><td>${escapeHtml(c.phone || '-')}</td><td><button class="btn btn-sm btn-danger delete-contact" data-id="${c.id}">删除</button></td></tr>`).join('')}</tbody></table></div>`;
+        container.querySelector('#add-contact-btn').addEventListener('click', openContactModal);
+        container.querySelectorAll('.delete-contact').forEach(btn => btn.addEventListener('click', async () => { await supabase.from('parent_contacts').delete().eq('id', btn.dataset.id); loadContactsDetail(container); }));
+        container.querySelectorAll('.contact-student-link').forEach(a => a.addEventListener('click', (e) => {
+          e.preventDefault();
+          switchPageWithStudent('analysis', a.dataset.id);
+        }));
+      });
+    }
+
+    function loadVisitsDetail(container) {
+      supabase.from('home_visits').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).order('visit_date', { ascending: false }).then(({ data }) => {
+        container.innerHTML = `<button class="btn btn-primary btn-sm" id="add-visit-btn" style="margin-bottom:8px;"><i class="fa-solid fa-plus"></i> 新增</button><div class="table-responsive"><table><thead><tr><th>学生</th><th>日期</th><th>内容</th><th>状态</th></tr></thead><tbody>${data.map(v => `<tr><td><a href="#" class="visit-student-link" data-id="${v.student_id}">${escapeHtml(v.students?.name || '')}</a></td><td>${v.visit_date || '-'}</td><td>${escapeHtml(v.content || '-')}</td><td>${v.status === 'completed' ? '已完成' : '待家访'}</td></tr>`).join('')}</tbody></table></div>`;
+        container.querySelector('#add-visit-btn').addEventListener('click', () => openVisitModal(() => loadVisitsDetail(container)));
+        container.querySelectorAll('.visit-student-link').forEach(a => a.addEventListener('click', (e) => {
+          e.preventDefault();
+          switchPageWithStudent('analysis', a.dataset.id);
+        }));
+      });
+    }
+
+    function loadMeetingsDetail(container) {
+      supabase.from('parent_meetings').select('*').eq('class_id', AppState.currentProfile.class_id).then(({ data }) => {
+        container.innerHTML = `<button class="btn btn-primary btn-sm" id="add-meeting-btn" style="margin-bottom:8px;"><i class="fa-solid fa-plus"></i> 新增</button><div class="table-responsive"><table><thead><tr><th>主题</th><th>日期</th><th>到会率</th><th>备注</th></tr></thead><tbody>${data.map(m => `<tr><td>${escapeHtml(m.theme)}</td><td>${m.meeting_date || '-'}</td><td>${m.attendance_rate ? m.attendance_rate + '%' : '-'}</td><td>${escapeHtml(m.notes || '-')}</td></tr>`).join('')}</tbody></table></div>`;
+        container.querySelector('#add-meeting-btn').addEventListener('click', () => openMeetingModal(() => loadMeetingsDetail(container)));
+      });
+    }
+
+    function loadGroupNoticesDetail(container) {
+      supabase.from('group_notices').select('*').eq('class_id', AppState.currentProfile.class_id).order('notice_date', { ascending: false }).then(({ data }) => {
+        container.innerHTML = `<button class="btn btn-primary btn-sm" id="add-group-notice-btn" style="margin-bottom:8px;"><i class="fa-solid fa-plus"></i> 发布</button><div class="table-responsive"><table><thead><tr><th>内容</th><th>日期</th><th>重要</th></tr></thead><tbody>${data.map(n => `<tr><td>${escapeHtml(n.content)}</td><td>${n.notice_date || '-'}</td><td>${n.is_important ? '<span class="badge badge-danger">重要</span>' : ''}</td></tr>`).join('')}</tbody></table></div>`;
+        container.querySelector('#add-group-notice-btn').addEventListener('click', () => openGroupNoticeModal(() => loadGroupNoticesDetail(container)));
+      });
+    }
+
+    function openContactModal() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>添加家长联系人</h3><div class="form-row" style="flex-direction:column;gap:8px;"><select id="contact-student"><option value="">选择学生</option>${AppState.allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}</select><input type="text" id="contact-name" placeholder="家长姓名"><input type="text" id="contact-relation" placeholder="关系"><input type="text" id="contact-phone" placeholder="电话"></div><div class="modal-actions"><button class="btn btn-outline" id="contact-cancel">取消</button><button class="btn btn-primary" id="contact-save">保存</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('contact-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('contact-save').addEventListener('click', async () => {
+        const student_id = modal.querySelector('#contact-student').value;
+        if (!student_id) { showToast('请选择学生', 'error'); return; }
+        await supabase.from('parent_contacts').insert({ class_id: AppState.currentProfile.class_id, student_id: parseInt(student_id), parent_name: modal.querySelector('#contact-name').value.trim() || null, relation: modal.querySelector('#contact-relation').value.trim() || null, phone: modal.querySelector('#contact-phone').value.trim() || null });
+        modal.remove(); showToast('联系人已添加', 'success');
+      });
+    }
+
+    function openVisitModal(callback) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>新增家访</h3><div class="form-row" style="flex-direction:column;gap:8px;"><select id="visit-student"><option value="">选择学生</option>${AppState.allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}</select><input type="date" id="visit-date"><input type="text" id="visit-content" placeholder="家访内容"><select id="visit-status"><option value="pending">待家访</option><option value="completed">已完成</option></select></div><div class="modal-actions"><button class="btn btn-outline" id="visit-cancel">取消</button><button class="btn btn-primary" id="visit-save">保存</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('visit-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('visit-save').addEventListener('click', async () => {
+        const student_id = modal.querySelector('#visit-student').value;
+        if (!student_id) { showToast('请选择学生', 'error'); return; }
+        await supabase.from('home_visits').insert({ class_id: AppState.currentProfile.class_id, student_id: parseInt(student_id), visit_date: modal.querySelector('#visit-date').value || null, content: modal.querySelector('#visit-content').value.trim() || null, status: modal.querySelector('#visit-status').value });
+        modal.remove(); showToast('家访记录已添加', 'success'); if (callback) callback();
+      });
+    }
+
+    function openMeetingModal(callback) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>新增家长会</h3><div class="form-row" style="flex-direction:column;gap:8px;"><input type="text" id="meeting-theme" placeholder="主题"><input type="date" id="meeting-date"><input type="number" id="meeting-rate" placeholder="到会率(%)"><input type="text" id="meeting-notes" placeholder="备注"></div><div class="modal-actions"><button class="btn btn-outline" id="meeting-cancel">取消</button><button class="btn btn-primary" id="meeting-save">保存</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('meeting-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('meeting-save').addEventListener('click', async () => {
+        const theme = modal.querySelector('#meeting-theme').value.trim();
+        if (!theme) { showToast('请输入主题', 'error'); return; }
+        await supabase.from('parent_meetings').insert({ class_id: AppState.currentProfile.class_id, theme, meeting_date: modal.querySelector('#meeting-date').value || null, attendance_rate: modal.querySelector('#meeting-rate').value ? parseFloat(modal.querySelector('#meeting-rate').value) : null, notes: modal.querySelector('#meeting-notes').value.trim() || null });
+        modal.remove(); showToast('家长会记录已添加', 'success'); if (callback) callback();
+      });
+    }
+
+    function openGroupNoticeModal(callback) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>发布群通知</h3><div class="form-row" style="flex-direction:column;gap:8px;"><textarea id="group-notice-content" placeholder="通知内容"></textarea><input type="date" id="group-notice-date"><label><input type="checkbox" id="group-notice-important"> 重要</label></div><div class="modal-actions"><button class="btn btn-outline" id="notice-cancel">取消</button><button class="btn btn-primary" id="notice-save">发布</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('notice-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('notice-save').addEventListener('click', async () => {
+        const content = modal.querySelector('#group-notice-content').value.trim();
+        if (!content) { showToast('请输入内容', 'error'); return; }
+        await supabase.from('group_notices').insert({ class_id: AppState.currentProfile.class_id, content, notice_date: modal.querySelector('#group-notice-date').value || null, is_important: modal.querySelector('#group-notice-important').checked });
+        modal.remove(); showToast('群通知已发布', 'success'); if (callback) callback();
+      });
+    }
+
+    // ==================== 通知公告 ====================
+    function loadNotices() {
+      const container = document.getElementById('page-notices');
+      container.innerHTML = `<div class="page-header"><h2>通知公告</h2></div><div class="card"><div class="form-row"><input type="text" id="notice-title" placeholder="标题" style="max-width:250px;"><input type="text" id="notice-content" placeholder="内容" style="flex:2;"><label><input type="checkbox" id="notice-pinned"> 置顶</label><button class="btn btn-primary btn-sm" id="add-notice-btn">发布</button></div></div><div id="notices-list" class="empty-state"><i class="fa-regular fa-bell"></i><p>暂无通知</p></div>`;
+      document.getElementById('add-notice-btn').addEventListener('click', async () => {
+        const title = document.getElementById('notice-title').value.trim();
+        if (!title) { showToast('请输入标题', 'error'); return; }
+        await supabase.from('notices').insert({ class_id: AppState.currentProfile.class_id, title, content: document.getElementById('notice-content').value.trim() || null, is_pinned: document.getElementById('notice-pinned').checked });
+        document.getElementById('notice-title').value = ''; document.getElementById('notice-content').value = '';
+        showToast('通知已发布', 'success'); loadNotices();
+      });
+      loadNoticesList();
+    }
+
+    function loadNoticesList() {
+      supabase.from('notices').select('*').eq('class_id', AppState.currentProfile.class_id).order('is_pinned', { ascending: false }).order('created_at', { ascending: false }).then(({ data }) => {
+        const container = document.getElementById('notices-list');
+        if (!data || data.length === 0) return;
+        container.innerHTML = data.map(n => `<div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px;margin-bottom:4px;"><strong>${escapeHtml(n.title)}</strong>${n.is_pinned ? ' <span class="badge badge-danger">置顶</span>' : ''}<p>${escapeHtml(n.content || '')}</p><span style="font-size:10px;color:var(--text-secondary);">${new Date(n.created_at).toLocaleString('zh-CN')}</span></div>`).join('');
+      });
+    }
+
+    // ==================== 班级朋友圈 ====================
+    let currentPostCategory = '';
+
+    function loadMoments() {
+      const container = document.getElementById('page-moments');
+      container.innerHTML = `
+        <div class="page-header"><h2>班级朋友圈</h2><div class="breadcrumb">首页 / 班级朋友圈</div></div>
+        <div class="card">
+          <div class="form-row"><textarea id="post-content" placeholder="分享班级精彩瞬间..." style="flex:2;height:50px;"></textarea><input type="file" id="post-images-input" accept="image/*" multiple style="max-width:180px;"><select id="post-category" style="max-width:130px;"><option value="class_activity">班级活动</option><option value="personal_growth">个人成长</option><option value="honor">荣誉时刻</option><option value="daily">日常点滴</option></select><button class="btn btn-primary btn-sm" id="publish-post-btn">发布</button></div>
+        </div>
+        <div class="card">
+          <div class="form-row" id="post-category-filter">
+            <button class="btn btn-sm ${currentPostCategory === '' ? 'btn-primary' : 'btn-outline'}" data-category="">全部</button>
+            <button class="btn btn-sm ${currentPostCategory === 'class_activity' ? 'btn-primary' : 'btn-outline'}" data-category="class_activity">班级活动</button>
+            <button class="btn btn-sm ${currentPostCategory === 'personal_growth' ? 'btn-primary' : 'btn-outline'}" data-category="personal_growth">个人成长</button>
+            <button class="btn btn-sm ${currentPostCategory === 'honor' ? 'btn-primary' : 'btn-outline'}" data-category="honor">荣誉时刻</button>
+            <button class="btn btn-sm ${currentPostCategory === 'daily' ? 'btn-primary' : 'btn-outline'}" data-category="daily">日常点滴</button>
+          </div>
+          <div id="moments-list"></div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      document.getElementById('publish-post-btn').addEventListener('click', publishPost);
+      document.querySelectorAll('#post-category-filter button').forEach(btn => btn.addEventListener('click', () => {
+        currentPostCategory = btn.dataset.category;
+        loadMoments();
+      }));
+      loadMomentsList();
+    }
+
+    function loadMomentsList() {
+      let query = supabase.from('posts').select('*').eq('class_id', AppState.currentProfile.class_id).order('created_at', { ascending: false }).limit(50);
+      if (currentPostCategory) query = query.eq('category', currentPostCategory);
+      query.then(async ({ data: posts }) => {
+        const container = document.getElementById('moments-list');
+        if (!posts || posts.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fa-solid fa-images"></i><p>暂无动态</p></div>'; return; }
+        let html = '';
+        for (const post of posts) {
+          const { data: media } = await supabase.from('post_media').select('*').eq('post_id', post.id);
+          html += `<div class="post-card" data-post-id="${post.id}">
+            <div class="post-header"><div class="post-avatar">${post.teacher_id ? post.teacher_id.substring(0,1).toUpperCase() : 'A'}</div><div><div style="font-weight:600;">教师</div><div style="font-size:10px;color:var(--text-secondary);">${new Date(post.created_at).toLocaleString('zh-CN')}</div></div></div>
+            <p style="margin-bottom:6px;">${escapeHtml(post.content || '')}</p>
+            ${media && media.length > 0 ? `<div class="post-media-grid">${media.slice(0,3).map(m => `<img src="${m.media_url}">`).join('')}${media.length > 3 ? `<div style="display:flex;align-items:center;justify-content:center;color:var(--text-secondary);">+${media.length - 3}</div>` : ''}</div>` : ''}
+          </div>`;
+        }
+        container.innerHTML = html;
+        container.querySelectorAll('.post-card').forEach(card => card.addEventListener('click', () => openPostDetail(card.dataset.postId)));
+      });
+    }
+
+    function openPostDetail(postId) {
+      Promise.all([
+        supabase.from('posts').select('*').eq('id', postId).single(),
+        supabase.from('post_media').select('*').eq('post_id', postId)
+      ]).then(([postRes, mediaRes]) => {
+        const post = postRes.data;
+        if (!post) return;
+        const media = mediaRes.data || [];
+        const modal = document.createElement('div'); modal.className = 'modal-overlay';
+        modal.innerHTML = `<div class="modal-content" style="max-width:700px;"><h3>动态详情</h3>
+          <p style="margin-bottom:8px;">${escapeHtml(post.content || '')}</p>
+          <div class="post-media-grid">${media.map(m => `<img src="${m.media_url}" style="cursor:pointer;">`).join('')}</div>
+          <p style="font-size:11px;color:var(--text-secondary);margin-top:8px;">${new Date(post.created_at).toLocaleString('zh-CN')} | 分类：${post.category || '-'}</p>
+          <div class="modal-actions"><button class="btn btn-outline" id="post-close">关闭</button></div></div>`;
+        document.body.appendChild(modal);
+        document.getElementById('post-close').addEventListener('click', () => modal.remove());
+        modal.querySelectorAll('.post-media-grid img').forEach(img => img.addEventListener('click', () => window.open(img.src)));
+      });
+    }
+
+    function publishPost() {
+      const content = document.getElementById('post-content').value.trim();
+      const category = document.getElementById('post-category').value;
+      const imagesInput = document.getElementById('post-images-input');
+      if (!content && imagesInput.files.length === 0) { showToast('请输入内容或选择图片', 'error'); return; }
+      supabase.from('posts').insert({ class_id: AppState.currentProfile.class_id, teacher_id: AppState.currentUser.id, content: content || null, category }).select().single().then(async ({ data: post, error }) => {
+        if (error) { showToast('发布失败', 'error'); return; }
+        if (imagesInput.files.length > 0) {
+          for (const file of imagesInput.files) {
+            const compressed = await compressImage(file, 1200, 0.7);
+            const fileName = `${post.id}_${Date.now()}_${Math.random().toString(36).substring(2,6)}.jpg`;
+            await supabase.storage.from('post-images').upload(fileName, compressed);
+            const { data: urlData } = supabase.storage.from('post-images').getPublicUrl(fileName);
+            await supabase.from('post_media').insert({ post_id: post.id, media_url: urlData.publicUrl });
+          }
+        }
+        document.getElementById('post-content').value = ''; imagesInput.value = '';
+        showToast('发布成功', 'success'); loadMoments();
+      });
+    }
+
+    // ==================== 数据洞察 ====================
+    function loadInsights() {
+      const container = document.getElementById('page-insights');
+      container.innerHTML = `<div class="page-header"><h2>数据洞察</h2></div><div class="stats-grid"><div class="stat-card"><div class="stat-icon"><i class="fa-solid fa-users"></i></div><div class="stat-info"><h4 id="insight-total-students">0</h4><p>学生总数</p></div></div><div class="stat-card"><div class="stat-icon green"><i class="fa-solid fa-chart-line"></i></div><div class="stat-info"><h4 id="insight-avg-score">-</h4><p>最近均分</p></div></div><div class="stat-card"><div class="stat-icon orange"><i class="fa-solid fa-user-check"></i></div><div class="stat-info"><h4 id="insight-attendance-rate">-</h4><p>本月出勤</p></div></div></div><div class="card"><canvas id="insight-chart" height="150"></canvas></div>`;
+      loadInsightsData();
+    }
+
+    function loadInsightsData() {
+      supabase.from('students').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id).then(({ count }) => {
+        document.getElementById('insight-total-students').textContent = count || 0;
+      });
+      supabase.from('exams').select('*').eq('class_id', AppState.currentProfile.class_id).order('exam_date', { ascending: true }).then(async ({ data: exams }) => {
+        if (exams && exams.length > 0) {
+          const labels = exams.map(e => e.exam_name);
+          const avgScores = [];
+          for (const exam of exams) {
+            const { data: grades } = await supabase.from('grades').select('score').eq('exam_id', exam.id);
+            avgScores.push(grades.length > 0 ? grades.reduce((sum, g) => sum + parseFloat(g.score), 0) / grades.length : null);
+          }
+          const ctx = document.getElementById('insight-chart').getContext('2d');
+          new Chart(ctx, { type: 'line', data: { labels, datasets: [{ label: '班级均分', data: avgScores, borderColor: '#6d5dfc', backgroundColor: 'rgba(109,93,252,0.1)', tension: 0.3, fill: true }] }, options: { responsive: true, scales: { y: { beginAtZero: false } }, plugins: { legend: { labels: { color: '#e2e8f0' } } } } });
+          const latestAvg = avgScores[avgScores.length - 1];
+          if (latestAvg) document.getElementById('insight-avg-score').textContent = latestAvg.toFixed(1);
+        }
+      });
+      const monthStart = new Date(); monthStart.setDate(1);
+      supabase.from('attendance').select('status').eq('class_id', AppState.currentProfile.class_id).gte('date', monthStart.toISOString().split('T')[0]).then(({ data }) => {
+        if (data && data.length > 0) {
+          const present = data.filter(a => a.status === 'present' || a.status === 'late').length;
+          document.getElementById('insight-attendance-rate').textContent = Math.round((present / data.length) * 100) + '%';
+        }
+      });
+    }
+
+    // ==================== 通知中心 ====================
+    function loadNotifications() {
+      const container = document.getElementById('page-notifications');
+      container.innerHTML = `<div class="page-header"><h2>通知中心</h2></div><div class="card"><button class="btn btn-outline btn-sm" id="mark-all-read-btn">全部已读</button><div id="notifications-list" class="empty-state"><i class="fa-regular fa-bell"></i><p>暂无通知</p></div></div>`;
+      document.getElementById('mark-all-read-btn').addEventListener('click', async () => { await supabase.from('notifications').update({ is_read: true }).eq('class_id', AppState.currentProfile.class_id); showToast('已全部标记为已读', 'success'); loadNotifications(); });
+      loadNotificationsList();
+    }
+
+    function loadNotificationsList() {
+      supabase.from('notifications').select('*').eq('class_id', AppState.currentProfile.class_id).order('created_at', { ascending: false }).limit(20).then(({ data }) => {
+        const container = document.getElementById('notifications-list');
+        if (!data || data.length === 0) return;
+        container.innerHTML = data.map(n => `<div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px;margin-bottom:4px;${!n.is_read ? 'border-left:3px solid var(--primary);' : ''}"><strong>${escapeHtml(n.title)}</strong><p>${escapeHtml(n.content || '')}</p><span style="font-size:10px;color:var(--text-secondary);">${new Date(n.created_at).toLocaleString('zh-CN')}</span></div>`).join('');
+      });
+    }
+
+    // ==================== 任务协作 ====================
+    function loadTasks() {
+      const container = document.getElementById('page-tasks');
+      container.innerHTML = `<div class="page-header"><h2>任务协作</h2></div><div class="card"><div class="form-row"><input type="text" id="task-title" placeholder="任务标题" style="flex:2;"><select id="task-assignee" style="max-width:180px;"><option value="">选择负责人</option></select><input type="date" id="task-deadline"><button class="btn btn-primary btn-sm" id="add-task-btn">创建</button></div></div><div class="card"><div id="tasks-list" class="empty-state"><i class="fa-solid fa-list-check"></i><p>暂无任务</p></div></div>`;
+      supabase.from('profiles').select('id, realname, username').eq('class_id', AppState.currentProfile.class_id).then(({ data: users }) => {
+        document.getElementById('task-assignee').innerHTML = '<option value="">选择负责人</option>' + users.map(u => `<option value="${u.id}">${escapeHtml(u.realname || u.username)}</option>`).join('');
+      });
+      document.getElementById('add-task-btn').addEventListener('click', async () => {
+        const title = document.getElementById('task-title').value.trim();
+        const assigneeId = document.getElementById('task-assignee').value;
+        if (!title || !assigneeId) { showToast('请填写完整', 'error'); return; }
+        await supabase.from('tasks').insert({ class_id: AppState.currentProfile.class_id, assigner_id: AppState.currentUser.id, assignee_id: assigneeId, title, deadline: document.getElementById('task-deadline').value || null });
+        document.getElementById('task-title').value = ''; showToast('任务已创建', 'success'); loadTasksList();
+      });
+      loadTasksList();
+    }
+
+    function loadTasksList() {
+      supabase.from('tasks').select('*, assignee:profiles!tasks_assignee_id_fkey(realname, username)').eq('class_id', AppState.currentProfile.class_id).order('created_at', { ascending: false }).then(({ data: tasks }) => {
+        const container = document.getElementById('tasks-list');
+        if (!tasks || tasks.length === 0) return;
+        container.innerHTML = tasks.map(t => `<div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;"><div><strong>${escapeHtml(t.title)}</strong><p style="font-size:11px;color:var(--text-secondary);">负责人: ${escapeHtml(t.assignee?.realname || t.assignee?.username || '-')} | 截止: ${t.deadline || '-'}</p></div><span class="badge ${t.status === 'completed' ? 'badge-success' : t.status === 'in_progress' ? 'badge-warning' : 'badge-info'}">${t.status === 'pending' ? '待处理' : t.status === 'in_progress' ? '进行中' : '已完成'}</span></div>`).join('');
+      });
+    }
+
+    // ==================== 用户管理 ====================
+    function loadUsers() {
+      if (!AppState.currentProfile || AppState.currentProfile.role !== 'admin') return;
+      const container = document.getElementById('page-users');
+      container.innerHTML = `<div class="page-header"><h2>用户管理</h2></div><div class="card"><div id="users-list" class="empty-state"><i class="fa-solid fa-user-shield"></i><p>加载中...</p></div></div>`;
+      supabase.from('profiles').select('*').order('created_at', { ascending: true }).then(({ data }) => {
+        const list = document.getElementById('users-list');
+        if (!data || data.length === 0) { list.innerHTML = '<i class="fa-solid fa-user-shield"></i><p>暂无用户</p>'; return; }
+        list.innerHTML = data.map(u => `<div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;"><div><strong>${escapeHtml(u.username)}</strong> <span style="font-size:11px;color:var(--text-secondary);">${escapeHtml(u.realname || '')}</span> <span class="badge ${u.is_active ? 'badge-success' : 'badge-danger'}">${u.is_active ? '启用' : '禁用'}</span></div><div><select class="role-select" data-id="${u.id}" style="padding:4px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;"><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>管理员</option><option value="class_teacher" ${u.role === 'class_teacher' ? 'selected' : ''}>班主任</option><option value="subject_teacher" ${u.role === 'subject_teacher' ? 'selected' : ''}>科任教师</option></select> <button class="btn btn-sm ${u.is_active ? 'btn-danger' : 'btn-success'} toggle-user" data-id="${u.id}" data-active="${u.is_active}">${u.is_active ? '禁用' : '启用'}</button></div></div>`).join('');
+        list.querySelectorAll('.role-select').forEach(sel => sel.addEventListener('change', async (e) => { await supabase.from('profiles').update({ role: e.target.value }).eq('id', e.target.dataset.id); showToast('角色已更新', 'success'); }));
+        list.querySelectorAll('.toggle-user').forEach(btn => btn.addEventListener('click', async (e) => {
+          if (e.currentTarget.dataset.id === AppState.currentUser.id) { showToast('不能禁用自己', 'error'); return; }
+          await supabase.from('profiles').update({ is_active: !(e.currentTarget.dataset.active === 'true') }).eq('id', e.currentTarget.dataset.id);
+          showToast('状态已更新', 'success'); loadUsers();
+        }));
+      });
+    }
+  </script>
+</body>
+</html>
