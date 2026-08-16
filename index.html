@@ -345,7 +345,32 @@
       XLSX.utils.book_append_sheet(wb, ws, '学生名单'); XLSX.writeFile(wb, `学生名单_${new Date().toISOString().split('T')[0]}.xlsx`);
       showToast('导出成功', 'success');
     }
-
+// ================================================================
+// 确保当前用户拥有 class_id（若无则自动生成）
+// ================================================================
+async function ensureClassId() {
+  if (!AppState.currentProfile) return null;
+  if (AppState.currentProfile.class_id) return AppState.currentProfile.class_id;
+  
+  // 生成新的 UUID 作为班级 ID
+  const newClassId = crypto.randomUUID();
+  const { error } = await supabase
+    .from('profiles')
+    .update({ class_id: newClassId })
+    .eq('id', AppState.currentUser.id);
+  if (error) {
+    console.error('生成 class_id 失败:', error);
+    showToast('无法创建班级 ID，请重试', 'error');
+    return null;
+  }
+  // 更新本地状态
+  AppState.currentProfile.class_id = newClassId;
+  // 重新加载 profile 确保一致
+  const fresh = await fetchProfile();
+  if (fresh) AppState.currentProfile = fresh;
+  showToast('已自动创建班级 ID，可以开始使用了', 'success');
+  return newClassId;
+}
     // ================================================================
     // 3. AI 调用（含缓存）
     // ================================================================
@@ -707,26 +732,44 @@
     // 7. 学生管理
     // ================================================================
     async function loadStudents() {
-      const container = document.getElementById('page-students');
-      const { data: students } = await supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id).order('student_no', { ascending: true });
-      AppState.allStudents = students || [];
-      container.innerHTML = `
-        <div class="page-header"><h2>👥 学生管理</h2><div class="breadcrumb">共 ${AppState.allStudents.length} 名学生</div></div>
-        <div class="card">
-          <div class="form-row" style="margin-bottom:10px;">
-            <input type="text" id="student-search" placeholder="搜索姓名/学号..." oninput="filterStudents()">
-            <select id="gender-filter" onchange="filterStudents()"><option value="">全部性别</option><option value="男">男</option><option value="女">女</option></select>
-            <select id="role-filter" onchange="filterStudents()"><option value="">全部职务</option><option value="班长">班长</option><option value="副班长">副班长</option><option value="学习委员">学习委员</option><option value="体育委员">体育委员</option><option value="文艺委员">文艺委员</option><option value="劳动委员">劳动委员</option></select>
-            <button class="btn btn-primary" onclick="showAddStudentModal()"><i class="fa-solid fa-plus"></i> 添加</button>
-            <button class="btn btn-success" onclick="importStudents()"><i class="fa-solid fa-file-import"></i> 导入</button>
-            <button class="btn btn-outline" onclick="exportStudents(AppState.allStudents)"><i class="fa-solid fa-file-export"></i> 导出</button>
-            <button class="btn btn-danger" onclick="clearAllStudents()"><i class="fa-solid fa-trash"></i> 清空</button>
-          </div>
-          <div id="student-list"></div>
-        </div>
-      `;
-      renderStudentList(AppState.allStudents);
-    }
+  const container = document.getElementById('page-students');
+  // 重新加载学生数据（确保使用最新 class_id）
+  const { data: students } = await supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id).order('student_no', { ascending: true });
+  AppState.allStudents = students || [];
+  container.innerHTML = `
+    <div class="page-header"><h2>👥 学生管理</h2><div class="breadcrumb">共 ${AppState.allStudents.length} 名学生</div></div>
+    <!-- 功能卡片组 -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:15px;">
+      <div class="card" style="cursor:pointer;text-align:center;padding:12px;" onclick="showAddStudentModal()">
+        <div style="font-size:24px;color:var(--primary-light);"><i class="fa-solid fa-user-plus"></i></div>
+        <div>添加学生</div>
+      </div>
+      <div class="card" style="cursor:pointer;text-align:center;padding:12px;" onclick="importStudents()">
+        <div style="font-size:24px;color:var(--success);"><i class="fa-solid fa-file-import"></i></div>
+        <div>导入</div>
+      </div>
+      <div class="card" style="cursor:pointer;text-align:center;padding:12px;" onclick="exportStudents(AppState.allStudents)">
+        <div style="font-size:24px;color:var(--warning);"><i class="fa-solid fa-file-export"></i></div>
+        <div>导出</div>
+      </div>
+      <div class="card" style="cursor:pointer;text-align:center;padding:12px;" onclick="clearAllStudents()">
+        <div style="font-size:24px;color:var(--danger);"><i class="fa-solid fa-trash"></i></div>
+        <div>清空</div>
+      </div>
+    </div>
+    <!-- 搜索与筛选 -->
+    <div class="card" style="margin-bottom:15px;">
+      <div class="form-row" style="margin-bottom:0;">
+        <input type="text" id="student-search" placeholder="搜索姓名/学号..." oninput="filterStudents()">
+        <select id="gender-filter" onchange="filterStudents()"><option value="">全部性别</option><option value="男">男</option><option value="女">女</option></select>
+        <select id="role-filter" onchange="filterStudents()"><option value="">全部职务</option><option value="班长">班长</option><option value="副班长">副班长</option><option value="学习委员">学习委员</option><option value="体育委员">体育委员</option><option value="文艺委员">文艺委员</option><option value="劳动委员">劳动委员</option></select>
+      </div>
+    </div>
+    <!-- 学生列表 -->
+    <div id="student-list"></div>
+  `;
+  renderStudentList(AppState.allStudents);
+}
 
     function renderStudentList(list) {
       const container = document.getElementById('student-list');
@@ -2965,33 +3008,52 @@
     // ================================================================
     // 24. 初始化
     // ================================================================
-    document.addEventListener('DOMContentLoaded', async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        AppState.currentUser = user;
-        const profile = await fetchProfile();
-        if (profile && profile.is_active) {
-          AppState.currentProfile = profile;
-          renderNavigation(); renderPageContainers(); showMain(); switchPage('dashboard');
-          if (profile.role === 'admin') { loadUsers(); }
-          applyBannerBackground(); loadNotificationBadge();
-          supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id).then(({ data }) => { AppState.allStudents = data || []; });
-          supabase.from('settings').select('*').eq('class_id', AppState.currentProfile.class_id).maybeSingle().then(({ data }) => {
-            if (data) {
-              AppState.schoolStartDate = data.school_start_date || '2026-09-01';
-              AppState.periodTimes = data.period_times;
-            }
-          });
-        } else { await supabase.auth.signOut(); showAuth(); }
-      } else { showAuth(); }
-      document.getElementById('login-tab').addEventListener('click', () => setAuthMode('login'));
-      document.getElementById('signup-tab').addEventListener('click', () => setAuthMode('signup'));
-      document.getElementById('auth-form').addEventListener('submit', handleAuth);
-      document.getElementById('logout-btn').addEventListener('click', logout);
-      document.getElementById('banner-upload-btn').addEventListener('click', () => document.getElementById('bg-upload-input').click());
-      document.getElementById('bg-upload-input').addEventListener('change', handleBannerUpload);
-      document.getElementById('logo-home').addEventListener('click', () => switchPage('dashboard'));
-    });
+ document.addEventListener('DOMContentLoaded', async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    AppState.currentUser = user;
+    const profile = await fetchProfile();
+    if (profile && profile.is_active) {
+      // ===== 核心修复：自动生成 class_id =====
+      if (!profile.class_id) {
+        const newClassId = crypto.randomUUID();
+        const { error: updateError } = await supabase.from('profiles')
+          .update({ class_id: newClassId })
+          .eq('id', profile.id);
+        if (!updateError) {
+          profile.class_id = newClassId;
+          showToast('已为您自动创建班级 ID，可以导入学生了', 'success');
+        } else {
+          console.error('更新 class_id 失败:', updateError);
+          showToast('初始化班级 ID 失败，请手动在数据库设置', 'error');
+        }
+      }
+      // ======================================
+      AppState.currentProfile = profile;
+      renderNavigation(); renderPageContainers(); showMain(); switchPage('dashboard');
+      if (profile.role === 'admin') { loadUsers(); }
+      applyBannerBackground(); loadNotificationBadge();
+      // 重新加载学生数据（现在 class_id 已存在）
+      const { data: students } = await supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id);
+      AppState.allStudents = students || [];
+      // 加载设置
+      supabase.from('settings').select('*').eq('class_id', AppState.currentProfile.class_id).maybeSingle().then(({ data }) => {
+        if (data) {
+          AppState.schoolStartDate = data.school_start_date || '2026-09-01';
+          AppState.periodTimes = data.period_times;
+        }
+      });
+    } else { await supabase.auth.signOut(); showAuth(); }
+  } else { showAuth(); }
+  // 事件绑定（保持不变）
+  document.getElementById('login-tab').addEventListener('click', () => setAuthMode('login'));
+  document.getElementById('signup-tab').addEventListener('click', () => setAuthMode('signup'));
+  document.getElementById('auth-form').addEventListener('submit', handleAuth);
+  document.getElementById('logout-btn').addEventListener('click', logout);
+  document.getElementById('banner-upload-btn').addEventListener('click', () => document.getElementById('bg-upload-input').click());
+  document.getElementById('bg-upload-input').addEventListener('change', handleBannerUpload);
+  document.getElementById('logo-home').addEventListener('click', () => switchPage('dashboard'));
+});
 
     async function loadNotificationBadge() {
       const { data } = await supabase.from('notifications').select('id').eq('class_id', AppState.currentProfile.class_id).eq('is_read', false);
