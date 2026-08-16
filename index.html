@@ -1034,61 +1034,175 @@
 
     function openImportModal() {
       const modal = document.createElement('div'); modal.className = 'modal-overlay';
-      modal.innerHTML = `<div class="modal-content"><h3>批量导入学生</h3>
-        <p style="color:var(--text-secondary);font-size:12px;margin-bottom:8px;">支持CSV/Excel，列顺序：<strong>学号,姓名,性别,族别,座位,职务,家长姓名,家长电话,住址,出生日期,兴趣爱好,特长,健康状况</strong>（表头自动识别）</p>
-        <textarea id="import-csv" rows="5" placeholder="粘贴CSV数据" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;padding:10px;"></textarea>
-        <div class="form-row" style="margin-top:8px;"><input type="file" id="import-file" accept=".csv,.xlsx,.xls" style="flex:1;"></div>
-        <div class="modal-actions"><button class="btn btn-outline" id="import-cancel">取消</button><button class="btn btn-primary" id="import-submit">导入</button></div></div>`;
+      modal.innerHTML = `
+        <div class="modal-content" style="max-width:700px;">
+          <h3>批量导入学生</h3>
+          <p style="color:var(--text-secondary);font-size:12px;margin-bottom:8px;">
+            支持CSV/Excel，<strong>优先识别表头</strong>（如“学号,姓名,性别,族别,座位,职务,家长姓名,家长电话,住址,出生日期,兴趣爱好,特长,健康状况”）。若无表头，按默认顺序导入，并请核对预览。
+          </p>
+          <textarea id="import-csv" rows="5" placeholder="粘贴CSV数据，第一行可为表头" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;padding:10px;"></textarea>
+          <div class="form-row" style="margin-top:8px;"><input type="file" id="import-file" accept=".csv,.xlsx,.xls" style="flex:1;"></div>
+          <div id="import-preview" style="margin-top:8px; color:var(--text-secondary); font-size:12px;"></div>
+          <div class="modal-actions"><button class="btn btn-outline" id="import-cancel">取消</button><button class="btn btn-primary" id="import-submit">导入</button></div>
+        </div>`;
+
       document.body.appendChild(modal);
       document.getElementById('import-cancel').addEventListener('click', () => modal.remove());
-      document.getElementById('import-submit').addEventListener('click', async () => {
-        const csvText = modal.querySelector('#import-csv').value.trim();
-        const fileInput = modal.querySelector('#import-file');
-        let rows = [];
-        if (csvText) { rows = parseCSV(csvText); }
-        else if (fileInput.files.length > 0) {
+
+      // 文件选择或粘贴时自动预览
+      const textarea = modal.querySelector('#import-csv');
+      const fileInput = modal.querySelector('#import-file');
+      const previewDiv = modal.querySelector('#import-preview');
+      textarea.addEventListener('input', () => showImportPreview(previewDiv, parseCSV(textarea.value)));
+      fileInput.addEventListener('change', async () => {
+        if (fileInput.files.length > 0) {
           const file = fileInput.files[0];
-          if (file.name.endsWith('.csv')) { rows = parseCSV(await file.text()); }
-          else { const data = await file.arrayBuffer(); const wb = XLSX.read(data, { type: 'array' }); rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }); }
-        } else { showToast('请输入数据或选择文件', 'error'); return; }
-        if (rows.length === 0) { showToast('没有数据', 'error'); return; }
-        const headerKeywords = ['学号','姓名','性别','族别','民族','座位','职务','家长','电话','住址','出生','生日','兴趣','爱好','特长','健康'];
-        let hasHeader = false;
-        if (rows[0]) {
-          hasHeader = rows[0].some(cell => headerKeywords.some(kw => String(cell).includes(kw)));
-          if (hasHeader) rows.shift();
+          let rows = [];
+          if (file.name.endsWith('.csv')) {
+            rows = parseCSV(await file.text());
+          } else {
+            const data = await file.arrayBuffer();
+            const wb = XLSX.read(data, { type: 'array' });
+            rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+          }
+          showImportPreview(previewDiv, rows);
         }
-        const studentsToInsert = rows.filter(r => r.length >= 2 && r[1]).map(r => {
-          // 处理出生日期，避免非日期字符串写入
+      });
+
+      document.getElementById('import-submit').addEventListener('click', async () => {
+        const csvText = textarea.value.trim();
+        let rows = [];
+        if (csvText) {
+          rows = parseCSV(csvText);
+        } else if (fileInput.files.length > 0) {
+          const file = fileInput.files[0];
+          if (file.name.endsWith('.csv')) {
+            rows = parseCSV(await file.text());
+          } else {
+            const data = await file.arrayBuffer();
+            const wb = XLSX.read(data, { type: 'array' });
+            rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+          }
+        } else {
+          showToast('请输入数据或选择文件', 'error');
+          return;
+        }
+
+        if (rows.length === 0) { showToast('没有数据', 'error'); return; }
+
+        // 智能表头识别
+        const headerKeywords = {
+          student_no: ['学号','编号','序号','学籍号'],
+          name: ['姓名','名字','学生','名称'],
+          gender: ['性别','男女'],
+          ethnicity: ['族别','民族'],
+          seat: ['座位','座号','位置'],
+          role: ['职务','班干部','职位','角色'],
+          parent_name: ['家长姓名','父亲','母亲','监护人','家长'],
+          parent_phone: ['家长电话','联系电话','手机','号码','电话'],
+          address: ['住址','地址','家庭住址','家庭地址'],
+          birth_date: ['出生','生日','出生日期'],
+          hobbies: ['兴趣','爱好','兴趣爱好'],
+          specialty: ['特长','擅长','专长'],
+          health_status: ['健康','体质','病史','健康状况']
+        };
+
+        let hasHeader = false;
+        let headerIndices = {};
+        if (rows[0]) {
+          const firstRow = rows[0];
+          // 检查是否包含至少两个关键词
+          const keywordCount = firstRow.filter(cell => {
+            const cellStr = String(cell).trim();
+            return Object.values(headerKeywords).some(kws => kws.some(kw => cellStr.includes(kw)));
+          }).length;
+          hasHeader = keywordCount >= 2;
+          if (hasHeader) {
+            // 建立字段-列索引映射
+            firstRow.forEach((cell, idx) => {
+              const cellStr = String(cell).trim();
+              for (const [field, kws] of Object.entries(headerKeywords)) {
+                if (kws.some(kw => cellStr.includes(kw))) {
+                  headerIndices[field] = idx;
+                  break;
+                }
+              }
+            });
+            // 确保 name 字段存在
+            if (headerIndices.name === undefined) {
+              // 如果找不到姓名列，尝试第一列作为姓名
+              headerIndices.name = 0;
+            }
+          }
+        }
+
+        // 如果无表头，使用默认顺序
+        const defaultOrder = ['student_no','name','gender','ethnicity','seat','role','parent_name','parent_phone','address','birth_date','hobbies','specialty','health_status'];
+
+        const studentsToInsert = [];
+        const dataRows = hasHeader ? rows.slice(1) : rows;
+
+        for (const row of dataRows) {
+          if (!row || row.length === 0 || !row.some(cell => String(cell).trim() !== '')) continue;
+          const getVal = (field) => {
+            let idx;
+            if (hasHeader) {
+              idx = headerIndices[field];
+            } else {
+              idx = defaultOrder.indexOf(field);
+            }
+            return idx !== undefined && idx >= 0 && idx < row.length ? String(row[idx]).trim() : '';
+          };
+
           let birthDate = null;
-          const rawBirth = r[9] ? String(r[9]).trim() : '';
+          const rawBirth = getVal('birth_date');
           if (rawBirth && /^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(rawBirth)) {
             birthDate = rawBirth.replace(/\//g, '-');
           }
-          return {
-            student_no: r[0] ? String(r[0]).trim() : null,
-            name: String(r[1]).trim(),
-            gender: r[2] ? String(r[2]).trim() : null,
-            ethnicity: r[3] ? String(r[3]).trim() : null,
-            seat: r[4] ? parseInt(r[4]) : null,
-            role: r[5] ? String(r[5]).trim() : null,
-            parent_name: r[6] ? String(r[6]).trim() : null,
-            parent_phone: r[7] ? String(r[7]).trim() : null,
-            address: r[8] ? String(r[8]).trim() : null,
+          const seat = getVal('seat');
+          const seatNum = seat ? parseInt(seat) : null;
+          const name = getVal('name');
+          if (!name) continue; // 姓名为空跳过
+
+          studentsToInsert.push({
+            student_no: getVal('student_no') || null,
+            name: name,
+            gender: getVal('gender') || null,
+            ethnicity: getVal('ethnicity') || null,
+            seat: isNaN(seatNum) ? null : seatNum,
+            role: getVal('role') || null,
+            parent_name: getVal('parent_name') || null,
+            parent_phone: getVal('parent_phone') || null,
+            address: getVal('address') || null,
             birth_date: birthDate,
-            hobbies: r[10] ? String(r[10]).trim() : null,
-            specialty: r[11] ? String(r[11]).trim() : null,
-            health_status: r[12] ? String(r[12]).trim() : null,
+            hobbies: getVal('hobbies') || null,
+            specialty: getVal('specialty') || null,
+            health_status: getVal('health_status') || null,
             class_id: AppState.currentProfile.class_id,
             avatar_color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0')
-          };
-        });
+          });
+        }
+
         if (studentsToInsert.length === 0) { showToast('没有有效数据', 'error'); return; }
+
         const { error } = await supabase.from('students').insert(studentsToInsert);
         if (error) { showToast('导入失败：' + error.message, 'error'); return; }
         showToast(`成功导入 ${studentsToInsert.length} 名学生`, 'success');
-        modal.remove(); loadStudents();
+        modal.remove();
+        loadStudents();
+        loadDashboard();
       });
+
+      // 预览函数
+      function showImportPreview(previewDiv, rows) {
+        if (!rows || rows.length === 0) {
+          previewDiv.innerHTML = '';
+          return;
+        }
+        const maxShow = 3;
+        const displayRows = rows.slice(0, maxShow);
+        previewDiv.innerHTML = `<strong>数据预览（前 ${displayRows.length} 行）：</strong><br>` + displayRows.map(r => r.join(' | ')).join('<br>');
+      }
     }
 
     // ==================== 座次表（修复+显示职务） ====================
@@ -1359,12 +1473,28 @@
         const deadline = hw.deadline ? new Date(hw.deadline) : null;
         const daysLeft = deadline ? Math.ceil((deadline - new Date()) / (24*60*60*1000)) : null;
         return `<div class="homework-card" data-id="${hw.id}">
-          <div style="display:flex;justify-content:space-between;align-items:center;"><span class="hw-subject">${escapeHtml(hw.subject)}</span><span class="badge ${daysLeft !== null && daysLeft < 0 ? 'badge-danger' : daysLeft !== null && daysLeft <= 2 ? 'badge-warning' : 'badge-info'}">${daysLeft !== null ? (daysLeft < 0 ? '已截止' : `剩余${daysLeft}天`) : '无截止'}</span></div>
-          <div class="hw-title">${escapeHtml(hw.title)}</div><div class="hw-meta">布置于 ${hw.assigned_date || '-'}</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span class="hw-subject">${escapeHtml(hw.subject)}</span>
+            <span class="badge ${daysLeft !== null && daysLeft < 0 ? 'badge-danger' : daysLeft !== null && daysLeft <= 2 ? 'badge-warning' : 'badge-info'}">${daysLeft !== null ? (daysLeft < 0 ? '已截止' : `剩余${daysLeft}天`) : '无截止'}</span>
+          </div>
+          <div class="hw-title">${escapeHtml(hw.title)}</div>
+          <div class="hw-meta">布置于 ${hw.assigned_date || '-'} | 截止：${hw.deadline || '无'} ${hw.deadline ? '(' + getWeekday(hw.deadline) + ')' : ''} | 提交率：<span class="hw-submit-rate" data-hw-id="${hw.id}">...</span></div>
         </div>`;
       }).join('');
       container.querySelectorAll('.homework-card').forEach(card => card.addEventListener('click', () => openHomeworkDetail(card.dataset.id)));
     }
+      // 异步更新每个作业的提交率
+      container.querySelectorAll('.hw-submit-rate').forEach(async (span) => {
+        const hwId = span.dataset.hwId;
+        const { data: subs } = await supabase.from('homework_submissions').select('status').eq('homework_id', hwId);
+        const totalStudents = AppState.allStudents.length || 0;
+        if (totalStudents > 0 && subs) {
+          const submitted = subs.filter(s => s.status === 'submitted' || s.status === 'late').length;
+          span.textContent = Math.round((submitted / totalStudents) * 100) + '%';
+        } else {
+          span.textContent = '-';
+        }
+      });
 
     function openHomeworkModal(homeworkId = null) {
       const hw = homeworkId ? AppState.homeworkList.find(h => h.id == homeworkId) : null;
@@ -1390,24 +1520,108 @@
       });
     }
 
-    function openHomeworkDetail(homeworkId) {
+       function openHomeworkDetail(homeworkId) {
       const hw = AppState.homeworkList.find(h => h.id == homeworkId);
       if (!hw) return;
       const modal = document.createElement('div'); modal.className = 'modal-overlay';
-      modal.innerHTML = `<div class="modal-content" style="max-width:700px;"><h3>${escapeHtml(hw.subject)}：${escapeHtml(hw.title)}</h3>
-        <p style="color:var(--text-secondary);font-size:12px;margin-bottom:10px;">${escapeHtml(hw.description || '无描述')} | 截止：${hw.deadline || '无'}</p>
-        <div id="submission-detail">加载中...</div>
-        <div class="modal-actions"><button class="btn btn-outline" id="detail-close">关闭</button><button class="btn btn-primary" id="edit-hw-btn">编辑</button></div></div>`;
+      modal.innerHTML = `
+        <div class="modal-content" style="max-width:800px;">
+          <h3>${escapeHtml(hw.subject)}：${escapeHtml(hw.title)}</h3>
+          <p style="color:var(--text-secondary);font-size:12px;margin-bottom:8px;">
+            ${escapeHtml(hw.description || '无描述')} | 截止：${hw.deadline || '无'} ${hw.deadline ? '(' + getWeekday(hw.deadline) + ')' : ''}
+          </p>
+          <div style="margin-bottom:10px; display:flex; gap:8px;">
+            <button class="btn btn-outline btn-sm" id="edit-hw-btn">编辑作业</button>
+            <button class="btn btn-outline btn-sm" id="export-missing-btn">导出未交名单</button>
+          </div>
+          <div id="submission-detail">加载中...</div>
+          <div class="modal-actions"><button class="btn btn-outline" id="detail-close">关闭</button></div>
+        </div>`;
       document.body.appendChild(modal);
       document.getElementById('detail-close').addEventListener('click', () => modal.remove());
       document.getElementById('edit-hw-btn').addEventListener('click', () => { modal.remove(); openHomeworkModal(hw.id); });
-      supabase.from('homework_submissions').select('*, students(name)').eq('homework_id', hw.id).then(({ data }) => {
+      document.getElementById('export-missing-btn').addEventListener('click', () => exportMissingStudents(hw.id));
+
+      // 加载学生和提交状态
+      Promise.all([
+        supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id).order('seat'),
+        supabase.from('homework_submissions').select('*').eq('homework_id', hw.id)
+      ]).then(([studentsRes, subsRes]) => {
+        const students = studentsRes.data || [];
+        const subs = subsRes.data || [];
+        const recordMap = {};
+        subs.forEach(s => recordMap[s.student_id] = s.status);
         const container = modal.querySelector('#submission-detail');
-        if (!data || data.length === 0) { container.innerHTML = '暂无提交数据'; return; }
-        const statusMap = { submitted: '已交', late: '迟交', missing: '未交' };
-        container.innerHTML = `<div class="table-responsive"><table><thead><tr><th>学生</th><th>状态</th></tr></thead><tbody>${data.map(s => `<tr><td><a href="#" class="sub-student-link" data-id="${s.student_id}">${escapeHtml(s.students?.name || '')}</a></td><td>${statusMap[s.status]}</td></tr>`).join('')}</tbody></table></div>`;
-        container.querySelectorAll('.sub-student-link').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); modal.remove(); switchPageWithStudent('analysis', a.dataset.id); }));
+        if (students.length === 0) {
+          container.innerHTML = '暂无学生';
+          return;
+        }
+        const statusOptions = (current) => `
+          <select class="sub-select" data-student-id="${students.id}" style="padding:4px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">
+            <option value="submitted" ${current === 'submitted' ? 'selected' : ''}>已交</option>
+            <option value="late" ${current === 'late' ? 'selected' : ''}>迟交</option>
+            <option value="missing" ${current === 'missing' ? 'selected' : ''}>未交</option>
+          </select>`;
+        // 注意：上面的 statusOptions 有变量错误，修正如下
+        container.innerHTML = `
+          <div class="table-responsive" style="max-height:400px;overflow-y:auto;">
+            <table>
+              <thead><tr><th>学生</th><th>状态</th></tr></thead>
+              <tbody>
+                ${students.map(s => {
+                  const current = recordMap[s.id] || 'missing';
+                  return `<tr><td><a href="#" class="sub-student-link" data-id="${s.id}">${escapeHtml(s.name)}</a></td><td>
+                    <select class="sub-select" data-student-id="${s.id}" style="padding:4px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">
+                      <option value="submitted" ${current === 'submitted' ? 'selected' : ''}>已交</option>
+                      <option value="late" ${current === 'late' ? 'selected' : ''}>迟交</option>
+                      <option value="missing" ${current === 'missing' ? 'selected' : ''}>未交</option>
+                    </select>
+                  </td></tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div class="form-row" style="margin-top:10px;">
+            <button class="btn btn-primary btn-sm" id="save-submissions-btn">保存提交状态</button>
+          </div>`;
+        container.querySelectorAll('.sub-student-link').forEach(a => a.addEventListener('click', (e) => {
+          e.preventDefault();
+          modal.remove();
+          switchPageWithStudent('analysis', a.dataset.id);
+        }));
+        container.querySelector('#save-submissions-btn').addEventListener('click', async () => {
+          const selects = container.querySelectorAll('.sub-select');
+          const records = Array.from(selects).map(sel => ({
+            homework_id: hw.id,
+            student_id: parseInt(sel.dataset.studentId),
+            status: sel.value
+          }));
+          const { error } = await supabase.from('homework_submissions').upsert(records, { onConflict: 'homework_id,student_id' });
+          if (error) { showToast('保存失败：' + error.message, 'error'); return; }
+          showToast('提交状态已保存', 'success');
+          loadHomeworkData(); // 刷新统计
+        });
       });
+    }
+
+    // 导出未交名单
+    function exportMissingStudents(homeworkId) {
+      supabase.from('homework_submissions').select('*, students(name)').eq('homework_id', homeworkId).eq('status', 'missing').then(({ data }) => {
+        if (!data || data.length === 0) { showToast('无未交学生', 'warning'); return; }
+        const rows = data.map(s => ({ '学生姓名': s.students?.name || '' }));
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, '未交名单');
+        XLSX.writeFile(wb, `未交名单_${new Date().toISOString().split('T')[0]}.xlsx`);
+        showToast('导出成功', 'success');
+      });
+    }
+
+    // 获取星期几
+    function getWeekday(dateStr) {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '';
+      return '星期' + '日一二三四五六'[d.getDay()];
     }
 
     function showHomeworkStats(type) {
