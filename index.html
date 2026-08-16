@@ -1415,6 +1415,1174 @@
         });
       }
     }
+
+    // ==================== 成绩管理（完整版） ====================
+    function loadGrades() {
+      const container = document.getElementById('page-grades');
+      container.innerHTML = `
+        <div class="page-header"><h2>成绩管理</h2><div class="breadcrumb">首页 / 成绩管理</div></div>
+        <div class="card">
+          <div class="card-header"><h3>学期管理</h3><button class="btn btn-primary btn-sm" id="add-semester-btn"><i class="fa-solid fa-plus"></i> 新增学期</button></div>
+          <div id="semester-list" class="form-row"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>考试列表</h3><button class="btn btn-primary btn-sm" id="add-exam-btn"><i class="fa-solid fa-plus"></i> 新建考试</button></div>
+          <div id="exam-list" class="empty-state"><i class="fa-solid fa-chart-bar"></i><p>暂无考试</p></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>成绩导入</h3><button class="btn btn-outline btn-sm" id="import-grades-btn"><i class="fa-solid fa-file-import"></i> 导入Excel</button></div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      loadSemesters();
+      document.getElementById('add-semester-btn').addEventListener('click', () => {
+        const modal = document.createElement('div'); modal.className = 'modal-overlay';
+        modal.innerHTML = `<div class="modal-content"><h3>新增学期</h3><div class="form-row" style="flex-direction:column;gap:8px;"><input type="text" id="semester-name" placeholder="学期名称（如2026秋季）"><input type="date" id="semester-start"><input type="date" id="semester-end"></div><div class="modal-actions"><button class="btn btn-outline" id="semester-cancel">取消</button><button class="btn btn-primary" id="semester-save">保存</button></div></div>`;
+        document.body.appendChild(modal);
+        document.getElementById('semester-cancel').addEventListener('click', () => modal.remove());
+        document.getElementById('semester-save').addEventListener('click', async () => {
+          const name = modal.querySelector('#semester-name').value.trim();
+          if (!name) { showToast('请输入学期名称', 'error'); return; }
+          await supabase.from('semesters').insert({ class_id: AppState.currentProfile.class_id, name, start_date: modal.querySelector('#semester-start').value || null, end_date: modal.querySelector('#semester-end').value || null });
+          modal.remove(); showToast('学期已创建', 'success'); loadSemesters();
+        });
+      });
+      document.getElementById('add-exam-btn').addEventListener('click', openExamModal);
+      document.getElementById('import-grades-btn').addEventListener('click', openGradeImportModal);
+      loadExamList();
+    }
+
+    function loadSemesters() {
+      supabase.from('semesters').select('*').eq('class_id', AppState.currentProfile.class_id).order('start_date').then(({ data }) => {
+        const container = document.getElementById('semester-list');
+        if (!data || data.length === 0) {
+          container.innerHTML = '<span style="color:var(--text-secondary);font-size:12px;">暂无学期，请先新增</span>';
+          return;
+        }
+        container.innerHTML = data.map(sem => `<button class="btn btn-sm ${AppState.selectedSemesterId === sem.id ? 'btn-primary' : 'btn-outline'}" data-semester-id="${sem.id}">${escapeHtml(sem.name)}</button>`).join('');
+        container.querySelectorAll('button[data-semester-id]').forEach(btn => btn.addEventListener('click', () => {
+          AppState.selectedSemesterId = btn.dataset.semesterId;
+          container.querySelectorAll('button').forEach(b => b.classList.remove('btn-primary'));
+          btn.classList.add('btn-primary');
+          loadExamList();
+        }));
+      });
+    }
+
+    function loadExamList() {
+      let query = supabase.from('exams').select('*').eq('class_id', AppState.currentProfile.class_id).order('exam_date', { ascending: false });
+      if (AppState.selectedSemesterId) query = query.eq('semester_id', AppState.selectedSemesterId);
+      query.then(({ data }) => {
+        const container = document.getElementById('exam-list');
+        if (!data || data.length === 0) { container.innerHTML = '<i class="fa-solid fa-chart-bar"></i><p>暂无考试</p>'; return; }
+        container.innerHTML = data.map(exam => `<div class="homework-card" data-exam-id="${exam.id}">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-weight:600;">${escapeHtml(exam.exam_name)}</span>
+            <span style="font-size:11px;color:var(--text-secondary);">${exam.exam_date || '-'}</span>
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); openGradeEntry('${exam.id}')">录入/查看</button>
+          <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); deleteExam('${exam.id}')">删除</button>
+        </div>`).join('');
+        container.querySelectorAll('.homework-card').forEach(card => card.addEventListener('click', () => openGradeEntry(card.dataset.examId)));
+      });
+    }
+
+    function openExamModal() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>新建考试</h3>
+        <div class="form-row" style="flex-direction:column;gap:8px;">
+          <input type="text" id="exam-name" placeholder="考试名称">
+          <input type="date" id="exam-date">
+          <select id="exam-type"><option value="monthly">月考</option><option value="midterm">期中</option><option value="final">期末</option><option value="weekly">周考</option><option value="other">其他</option></select>
+          <select id="exam-semester"><option value="">选择学期</option></select>
+        </div>
+        <div class="modal-actions"><button class="btn btn-outline" id="exam-cancel">取消</button><button class="btn btn-primary" id="exam-save">保存</button></div></div>`;
+      document.body.appendChild(modal);
+      supabase.from('semesters').select('*').eq('class_id', AppState.currentProfile.class_id).then(({ data }) => {
+        const select = modal.querySelector('#exam-semester');
+        select.innerHTML = '<option value="">选择学期</option>' + (data || []).map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+      });
+      document.getElementById('exam-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('exam-save').addEventListener('click', async () => {
+        const name = modal.querySelector('#exam-name').value.trim();
+        if (!name) { showToast('请输入名称', 'error'); return; }
+        await supabase.from('exams').insert({ class_id: AppState.currentProfile.class_id, exam_name: name, exam_date: modal.querySelector('#exam-date').value || null, exam_type: modal.querySelector('#exam-type').value, semester_id: modal.querySelector('#exam-semester').value || null });
+        modal.remove(); showToast('考试已创建', 'success'); loadExamList();
+      });
+    }
+
+    function openGradeEntry(examId) {
+      AppState.selectedExamId = examId;
+      Promise.all([
+        supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id).order('seat'),
+        supabase.from('grades').select('*').eq('exam_id', examId)
+      ]).then(([studentsRes, gradesRes]) => {
+        const students = studentsRes.data || [];
+        const grades = gradesRes.data || [];
+        const gradeMap = {};
+        grades.forEach(g => gradeMap[`${g.student_id}_${g.subject}`] = g.score);
+        const subjects = ['语文','数学','英语','物理','化学','生物','政治','历史','地理'];
+        const area = document.createElement('div'); area.className = 'modal-overlay';
+        area.innerHTML = `<div class="modal-content" style="max-width:900px;"><h3>成绩录入与查看</h3>
+          <div class="form-row" style="margin-bottom:10px;">
+            <button class="btn btn-outline btn-sm" id="view-stats-btn"><i class="fa-solid fa-chart-simple"></i> 统计图表</button>
+            <button class="btn btn-primary btn-sm" id="grade-save-btn"><i class="fa-solid fa-save"></i> 保存成绩</button>
+          </div>
+          <div class="table-responsive" style="max-height:400px;overflow-y:auto;">
+            <table><thead><tr><th>姓名</th>${subjects.map(s => `<th>${s}</th>`).join('')}<th>总分</th></tr></thead>
+            <tbody>${students.map(stu => {
+              let total = 0;
+              const cells = subjects.map(sub => {
+                const val = gradeMap[`${stu.id}_${sub}`] ?? '';
+                if (val !== '') total += parseFloat(val);
+                return `<td><input type="number" class="grade-input" data-student="${stu.id}" data-subject="${sub}" value="${val}" style="width:60px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;padding:4px;"></td>`;
+              }).join('');
+              return `<tr><td><a href="#" class="grade-student-link" data-id="${stu.id}">${escapeHtml(stu.name)}</a></td>${cells}<td>${total}</td></tr>`;
+            }).join('')}</tbody></table>
+          </div>
+          <div class="modal-actions"><button class="btn btn-outline" id="grade-close">关闭</button></div></div>`;
+        document.body.appendChild(area);
+        area.querySelector('#grade-close').addEventListener('click', () => area.remove());
+        area.querySelector('#grade-save-btn').addEventListener('click', async () => {
+          const inputs = area.querySelectorAll('.grade-input');
+          const records = [];
+          inputs.forEach(inp => { if (inp.value !== '' && !isNaN(parseFloat(inp.value))) records.push({ class_id: AppState.currentProfile.class_id, exam_id: examId, student_id: parseInt(inp.dataset.student), subject: inp.dataset.subject, score: parseFloat(inp.value) }); });
+          await supabase.from('grades').delete().eq('exam_id', examId);
+          if (records.length) await supabase.from('grades').insert(records);
+          showToast('成绩保存成功', 'success'); area.remove(); loadExamList();
+        });
+        area.querySelector('#view-stats-btn').addEventListener('click', () => showGradeStats(examId, students, gradeMap));
+        area.querySelectorAll('.grade-student-link').forEach(a => a.addEventListener('click', (e) => {
+          e.preventDefault();
+          area.remove();
+          switchPageWithStudent('analysis', a.dataset.id);
+        }));
+      });
+    }
+
+    function showGradeStats(examId, students, gradeMap) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content" style="max-width:750px;"><h3>成绩统计</h3><div id="stats-content">加载中...</div><div class="modal-actions"><button class="btn btn-outline" id="stats-close">关闭</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('stats-close').addEventListener('click', () => modal.remove());
+      const container = modal.querySelector('#stats-content');
+      const subjects = ['语文','数学','英语','物理','化学','生物','政治','历史','地理'];
+      let html = '<div class="table-responsive"><table><thead><tr><th>科目</th><th>平均分</th><th>及格率</th><th>优秀率</th></tr></thead><tbody>';
+      subjects.forEach(sub => {
+        const scores = students.map(s => parseFloat(gradeMap[`${s.id}_${sub}`] || '0')).filter(v => !isNaN(v) && v > 0);
+        if (scores.length > 0) {
+          const avg = (scores.reduce((a,b) => a+b, 0) / scores.length).toFixed(1);
+          const passRate = Math.round((scores.filter(v => v >= 60).length / scores.length) * 100);
+          const excellentRate = Math.round((scores.filter(v => v >= 85).length / scores.length) * 100);
+          html += `<tr><td>${sub}</td><td>${avg}</td><td>${passRate}%</td><td>${excellentRate}%</td></tr>`;
+        }
+      });
+      html += '</tbody></table></div>';
+      container.innerHTML = html;
+    }
+
+    function deleteExam(examId) {
+      if (!confirm('确定删除该考试？')) return;
+      supabase.from('exams').delete().eq('id', examId).then(() => { showToast('考试已删除', 'success'); loadExamList(); });
+    }
+
+    function openGradeImportModal() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>导入成绩Excel</h3>
+        <p style="color:var(--text-secondary);font-size:12px;">Excel格式：第一行表头含“姓名”或“学号”，其余列为科目名，成绩按行填入。</p>
+        <select id="import-exam-select" style="width:100%;margin-bottom:8px;"><option value="">选择考试</option></select>
+        <input type="file" id="import-grades-file" accept=".xlsx,.xls" style="width:100%;margin-bottom:8px;">
+        <div class="modal-actions"><button class="btn btn-outline" id="import-grades-cancel">取消</button><button class="btn btn-primary" id="import-grades-submit">导入</button></div></div>`;
+      document.body.appendChild(modal);
+      supabase.from('exams').select('*').eq('class_id', AppState.currentProfile.class_id).then(({ data }) => {
+        const select = modal.querySelector('#import-exam-select');
+        select.innerHTML = '<option value="">选择考试</option>' + (data || []).map(e => `<option value="${e.id}">${escapeHtml(e.exam_name)}</option>`).join('');
+      });
+      document.getElementById('import-grades-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('import-grades-submit').addEventListener('click', async () => {
+        const examId = modal.querySelector('#import-exam-select').value;
+        const file = modal.querySelector('#import-grades-file').files[0];
+        if (!examId || !file) { showToast('请选择考试和文件', 'error'); return; }
+        const data = await file.arrayBuffer();
+        const wb = XLSX.read(data, { type: 'array' });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        if (rows.length < 2) { showToast('数据不足', 'error'); return; }
+        const header = rows[0];
+        const nameIdx = header.findIndex(h => String(h).includes('姓名') || String(h).includes('学号'));
+        if (nameIdx === -1) { showToast('未找到姓名列', 'error'); return; }
+        const subjectIndices = [];
+        header.forEach((h, idx) => { if (idx !== nameIdx) subjectIndices.push({ idx, subject: String(h).trim() }); });
+        const studentsRes = await supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id);
+        const studentList = studentsRes.data || [];
+        const records = [];
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          const studentName = String(row[nameIdx]).trim();
+          const student = studentList.find(s => s.name === studentName || s.student_no === studentName);
+          if (!student) continue;
+          subjectIndices.forEach(({ idx, subject }) => {
+            const score = parseFloat(row[idx]);
+            if (!isNaN(score)) records.push({ class_id: AppState.currentProfile.class_id, exam_id: examId, student_id: student.id, subject, score });
+          });
+        }
+        await supabase.from('grades').delete().eq('exam_id', examId);
+        if (records.length) await supabase.from('grades').insert(records);
+        modal.remove(); showToast(`导入 ${records.length} 条成绩`, 'success'); loadExamList();
+      });
+    }
+
+    // ==================== 课程表（完整版） ====================
+    const SUBJECT_COLORS = {
+      '语文': '#ef4444', '数学': '#3b82f6', '英语': '#10b981', '物理': '#f59e0b',
+      '化学': '#8b5cf6', '生物': '#06b6d4', '政治': '#eab308', '历史': '#a16207',
+      '地理': '#ec4899', '体育': '#22c55e', '音乐': '#f472b6', '美术': '#fb923c',
+      '其他': '#94a3b8'
+    };
+
+    function loadSchedule() {
+      const container = document.getElementById('page-schedule');
+      container.innerHTML = `
+        <div class="page-header"><h2>智能课程表</h2><div class="breadcrumb">首页 / 课程表</div></div>
+        <div class="card">
+          <div class="card-header"><h3>课程表</h3>
+            <div class="form-row">
+              <select id="schedule-view-type" style="max-width:130px;">
+                <option value="class" ${AppState.scheduleView === 'class' ? 'selected' : ''}>班级课表</option>
+                <option value="teacher" ${AppState.scheduleView === 'teacher' ? 'selected' : ''}>教师课表</option>
+              </select>
+              <select id="schedule-week-type" style="max-width:130px;"><option value="both">单双周通用</option><option value="single">单周</option><option value="double">双周</option></select>
+              <button class="btn btn-primary btn-sm" id="edit-schedule-btn"><i class="fa-solid fa-edit"></i> 编辑课程</button>
+              <button class="btn btn-outline btn-sm" id="import-schedule-btn"><i class="fa-solid fa-file-import"></i> 导入</button>
+              <button class="btn btn-outline btn-sm" id="ai-schedule-btn"><i class="fa-solid fa-robot"></i> AI排课建议</button>
+              <button class="btn btn-outline btn-sm" id="period-time-settings-btn"><i class="fa-solid fa-clock"></i> 时段设置</button>
+            </div>
+          </div>
+          <div class="table-responsive"><table id="schedule-table"></table></div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      loadScheduleData();
+      document.getElementById('schedule-view-type').addEventListener('change', (e) => { AppState.scheduleView = e.target.value; loadScheduleData(); });
+      document.getElementById('schedule-week-type').addEventListener('change', loadScheduleData);
+      document.getElementById('edit-schedule-btn').addEventListener('click', () => openScheduleEditor());
+      document.getElementById('import-schedule-btn').addEventListener('click', openScheduleImportModal);
+      document.getElementById('ai-schedule-btn').addEventListener('click', aiScheduleSuggest);
+      document.getElementById('period-time-settings-btn').addEventListener('click', openPeriodTimeSettings);
+    }
+
+    function getPeriodTime(period) {
+      if (AppState.periodTimes && AppState.periodTimes[period]) return AppState.periodTimes[period];
+      const times = {1:'8:00-8:45',2:'8:55-9:40',3:'9:50-10:35',4:'10:45-11:30',5:'14:00-14:45',6:'14:55-15:40',7:'15:50-16:35',8:'16:45-17:30'};
+      return times[period] || '';
+    }
+
+    function loadScheduleData() {
+      const weekType = document.getElementById('schedule-week-type')?.value || 'both';
+      const viewType = AppState.scheduleView;
+      let query = supabase.from('schedule').select('*').eq('class_id', AppState.currentProfile.class_id);
+      if (viewType === 'class') { query = query.or(`week_type.eq.${weekType},week_type.eq.both`); }
+      else { const teacherName = AppState.currentProfile.realname || AppState.currentProfile.username; query = query.eq('teacher_name', teacherName).or(`week_type.eq.${weekType},week_type.eq.both`); }
+      query.then(({ data, error }) => {
+        if (error) { showToast('加载课程表失败', 'error'); return; }
+        const table = document.getElementById('schedule-table');
+        const days = ['周一','周二','周三','周四','周五','周六','周日'];
+        const periods = 8;
+        let html = '<thead><tr><th>节次/时间</th>';
+        days.forEach((d, i) => { const weekend = i >= 5; html += `<th style="${weekend ? 'background:rgba(255,255,255,0.02);' : ''}">${d}</th>`; });
+        html += '</tr></thead><tbody>';
+        for (let period = 1; period <= periods; period++) {
+          html += `<tr><td style="white-space:nowrap;">第${period}节<br><small style="font-size:10px;">${getPeriodTime(period)}</small></td>`;
+          for (let day = 1; day <= 7; day++) {
+            const slot = data.find(s => s.day_of_week === day && s.period === period);
+            const color = slot ? SUBJECT_COLORS[slot.subject] || SUBJECT_COLORS['其他'] : '';
+            const isWeekend = day >= 6;
+            html += `<td style="${isWeekend ? 'background:rgba(255,255,255,0.02);' : ''}">`;
+            if (slot) {
+              html += `<div class="schedule-block" style="background:${color}20;border-left:3px solid ${color};" data-slot-id="${slot.id}">
+                <div class="schedule-subject">${escapeHtml(slot.subject)}</div>
+                <div class="schedule-teacher">${escapeHtml(slot.teacher_name || '')}</div>
+              </div>`;
+            }
+            html += '</td>';
+          }
+          html += '</tr>';
+          if (period === 4) { html += `<tr style="background:rgba(0,0,0,0.2);"><td colspan="8" style="text-align:center;color:var(--text-secondary);font-size:11px;letter-spacing:3px;">午休 12:00 - 14:00</td></tr>`; }
+        }
+        html += '</tbody>';
+        table.innerHTML = html;
+        table.querySelectorAll('.schedule-block').forEach(block => block.addEventListener('click', () => openScheduleEditor(block.dataset.slotId)));
+      });
+    }
+
+    function openScheduleEditor(slotId = null) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>编辑课程</h3>
+        <div class="form-row" style="flex-direction:column;gap:8px;">
+          <select id="edit-day"><option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="7">周日</option></select>
+          <input type="number" id="edit-period" placeholder="节次(1-8)" min="1" max="8">
+          <input type="text" id="edit-subject" placeholder="课程名称">
+          <input type="text" id="edit-teacher" placeholder="任课教师">
+          <select id="edit-week-type"><option value="both">单双周通用</option><option value="single">单周</option><option value="double">双周</option></select>
+        </div>
+        <div class="modal-actions"><button class="btn btn-outline" id="edit-cancel">取消</button><button class="btn btn-primary" id="edit-save">保存</button>${slotId ? '<button class="btn btn-danger" id="edit-delete">删除</button>' : ''}</div></div>`;
+      document.body.appendChild(modal);
+      if (slotId) {
+        supabase.from('schedule').select('*').eq('id', slotId).single().then(({ data }) => {
+          if (data) {
+            modal.querySelector('#edit-day').value = data.day_of_week;
+            modal.querySelector('#edit-period').value = data.period;
+            modal.querySelector('#edit-subject').value = data.subject;
+            modal.querySelector('#edit-teacher').value = data.teacher_name || '';
+            modal.querySelector('#edit-week-type').value = data.week_type;
+          }
+        });
+      }
+      document.getElementById('edit-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('edit-save').addEventListener('click', async () => {
+        const day = parseInt(modal.querySelector('#edit-day').value);
+        const period = parseInt(modal.querySelector('#edit-period').value);
+        const subject = modal.querySelector('#edit-subject').value.trim();
+        const teacher = modal.querySelector('#edit-teacher').value.trim();
+        const weekType = modal.querySelector('#edit-week-type').value;
+        if (!subject || !period) { showToast('请填写完整', 'error'); return; }
+        if (slotId) { await supabase.from('schedule').update({ day_of_week: day, period, subject, teacher_name: teacher || null, week_type: weekType }).eq('id', slotId); }
+        else { await supabase.from('schedule').upsert({ class_id: AppState.currentProfile.class_id, day_of_week: day, period, subject, teacher_name: teacher || null, week_type: weekType }, { onConflict: 'class_id,day_of_week,period,week_type' }); }
+        modal.remove(); showToast('课程已更新', 'success'); loadScheduleData();
+      });
+      if (slotId) {
+        document.getElementById('edit-delete').addEventListener('click', async () => {
+          if (confirm('确定删除该课程？')) { await supabase.from('schedule').delete().eq('id', slotId); modal.remove(); showToast('课程已删除', 'success'); loadScheduleData(); }
+        });
+      }
+    }
+
+    function openScheduleImportModal() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>导入课程表Excel</h3>
+        <p style="color:var(--text-secondary);font-size:12px;">Excel格式：第一行为节次，第一列为星期，交叉单元格填课程名称。可含教师名（如“语文(张老师)”）。</p>
+        <input type="file" id="import-schedule-file" accept=".xlsx,.xls" style="width:100%;margin-bottom:8px;">
+        <div class="modal-actions"><button class="btn btn-outline" id="import-schedule-cancel">取消</button><button class="btn btn-primary" id="import-schedule-submit">导入</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('import-schedule-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('import-schedule-submit').addEventListener('click', async () => {
+        const file = modal.querySelector('#import-schedule-file').files[0];
+        if (!file) { showToast('请选择文件', 'error'); return; }
+        const data = await file.arrayBuffer();
+        const wb = XLSX.read(data, { type: 'array' });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        const records = [];
+        const dayMap = { '周一': 1, '星期二': 2, '周三': 3, '周四': 4, '周五': 5, '周六': 6, '周日': 7 };
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row[0]) continue;
+          const dayStr = String(row[0]).trim();
+          let day = dayMap[dayStr] || parseInt(dayStr);
+          if (!day || day < 1 || day > 7) continue;
+          for (let j = 1; j < row.length; j++) {
+            const cell = String(row[j] || '').trim();
+            if (!cell) continue;
+            const period = j;
+            let subject = cell;
+            let teacher = null;
+            const match = cell.match(/^(.+?)\((.+?)\)$/);
+            if (match) { subject = match[1].trim(); teacher = match[2].trim(); }
+            records.push({ class_id: AppState.currentProfile.class_id, day_of_week: day, period, subject, teacher_name: teacher, week_type: 'both' });
+          }
+        }
+        if (records.length === 0) { showToast('未识别到课程', 'error'); return; }
+        await supabase.from('schedule').delete().eq('class_id', AppState.currentProfile.class_id);
+        await supabase.from('schedule').insert(records);
+        modal.remove(); showToast(`导入 ${records.length} 条课程`, 'success'); loadScheduleData();
+      });
+    }
+
+    async function aiScheduleSuggest() {
+      const result = await callAI('schedule_suggest', { prompt: '请根据一般初中或高中课程设置，提供一份合理的课程表排布建议，包含每天8节课，周一至周五。' });
+      if (result) {
+        const modal = document.createElement('div'); modal.className = 'modal-overlay';
+        modal.innerHTML = `<div class="modal-content"><h3>AI 排课建议</h3><pre style="white-space:pre-wrap;color:#fff;">${escapeHtml(result)}</pre><div class="modal-actions"><button class="btn btn-outline" id="ai-close">关闭</button></div></div>`;
+        document.body.appendChild(modal);
+        document.getElementById('ai-close').addEventListener('click', () => modal.remove());
+      }
+    }
+
+    function openPeriodTimeSettings() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      let html = '<div class="modal-content"><h3>课程时段设置</h3><div class="form-row" style="flex-direction:column;gap:8px;">';
+      for (let i = 1; i <= 8; i++) {
+        const current = getPeriodTime(i);
+        html += `<div class="form-row"><label style="width:60px;font-size:12px;">第${i}节</label><input type="text" id="period-time-${i}" value="${current}" style="flex:1;"></div>`;
+      }
+      html += '</div><div class="modal-actions"><button class="btn btn-outline" id="pt-cancel">取消</button><button class="btn btn-primary" id="pt-save">保存</button></div></div>';
+      modal.innerHTML = html;
+      document.body.appendChild(modal);
+      document.getElementById('pt-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('pt-save').addEventListener('click', async () => {
+        const times = {};
+        for (let i = 1; i <= 8; i++) { times[i] = document.getElementById(`period-time-${i}`).value.trim(); }
+        AppState.periodTimes = times;
+        await supabase.from('settings').upsert({ class_id: AppState.currentProfile.class_id, period_times: times }, { onConflict: 'class_id' });
+        modal.remove(); showToast('时段设置已保存', 'success'); loadScheduleData();
+      });
+    }
+
+    // ==================== 考勤管理（完整版） ====================
+    function loadAttendance() {
+      const container = document.getElementById('page-attendance');
+      container.innerHTML = `
+        <div class="page-header"><h2>考勤管理</h2><div class="breadcrumb">首页 / 考勤管理</div></div>
+        <div class="stats-grid">
+          <div class="stat-card" id="att-today-card" style="cursor:pointer;"><div class="stat-icon"><i class="fa-solid fa-calendar-check"></i></div><div class="stat-info"><h4 id="att-today-rate">-</h4><p>今日出勤率</p></div></div>
+          <div class="stat-card" id="att-month-card" style="cursor:pointer;"><div class="stat-icon green"><i class="fa-solid fa-user-clock"></i></div><div class="stat-info"><h4 id="att-month-rate">-</h4><p>本月出勤率</p></div></div>
+          <div class="stat-card" id="att-absent-card" style="cursor:pointer;"><div class="stat-icon orange"><i class="fa-solid fa-user-xmark"></i></div><div class="stat-info"><h4 id="att-absent-count">0</h4><p>本月缺勤</p></div></div>
+          <div class="stat-card" id="att-leave-card" style="cursor:pointer;"><div class="stat-icon red"><i class="fa-solid fa-file-medical"></i></div><div class="stat-info"><h4 id="att-leave-count">0</h4><p>本月请假</p></div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+          <div class="card">
+            <div class="card-header"><h3>每日考勤</h3><div class="form-row"><input type="date" id="attendance-date" style="max-width:140px;"><button class="btn btn-primary btn-sm" id="load-attendance-btn">加载</button><button class="btn btn-success btn-sm" id="save-attendance-btn">保存</button><button class="btn btn-outline btn-sm" id="all-present-btn">全选出勤</button></div></div>
+            <div class="table-responsive" style="max-height:400px;overflow-y:auto;"><table><thead><tr><th>姓名</th><th>状态</th></tr></thead><tbody id="attendance-tbody"></tbody></table></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>请假管理</h3><button class="btn btn-primary btn-sm" id="add-leave-btn"><i class="fa-solid fa-plus"></i> 新增</button></div>
+            <div class="table-responsive" style="max-height:400px;overflow-y:auto;"><table><thead><tr><th>学生</th><th>日期</th><th>状态</th><th>操作</th></tr></thead><tbody id="leaves-tbody"></tbody></table></div>
+          </div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      const dateInput = document.getElementById('attendance-date');
+      if (!dateInput.value) dateInput.value = new Date().toISOString().split('T')[0];
+      loadAttendanceData();
+      loadLeaves();
+      loadAttendanceStats();
+      document.getElementById('load-attendance-btn').addEventListener('click', loadAttendanceData);
+      document.getElementById('save-attendance-btn').addEventListener('click', saveAttendance);
+      document.getElementById('add-leave-btn').addEventListener('click', openLeaveModal);
+      document.getElementById('all-present-btn').addEventListener('click', () => { document.querySelectorAll('.att-status-select').forEach(sel => sel.value = 'present'); });
+      document.getElementById('att-today-card').addEventListener('click', () => showAttStats('today'));
+      document.getElementById('att-month-card').addEventListener('click', () => showAttStats('month'));
+      document.getElementById('att-absent-card').addEventListener('click', () => showAttStats('absent'));
+      document.getElementById('att-leave-card').addEventListener('click', () => showAttStats('leave'));
+    }
+
+    function loadAttendanceData() {
+      const date = document.getElementById('attendance-date').value;
+      if (!date) return;
+      Promise.all([
+        supabase.from('students').select('*').eq('class_id', AppState.currentProfile.class_id).order('seat'),
+        supabase.from('attendance').select('*').eq('class_id', AppState.currentProfile.class_id).eq('date', date)
+      ]).then(([studentsRes, attRes]) => {
+        AppState.attendanceStudents = studentsRes.data || [];
+        const recordMap = {};
+        (attRes.data || []).forEach(r => recordMap[r.student_id] = r.status);
+        const tbody = document.getElementById('attendance-tbody');
+        tbody.innerHTML = '';
+        AppState.attendanceStudents.forEach(s => {
+          const status = recordMap[s.id] || 'present';
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td><a href="#" class="att-student-link" data-id="${s.id}">${escapeHtml(s.name)}</a></td><td><select class="att-status-select" data-student-id="${s.id}" style="padding:4px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;"><option value="present" ${status === 'present' ? 'selected' : ''}>出勤</option><option value="late" ${status === 'late' ? 'selected' : ''}>迟到</option><option value="absent" ${status === 'absent' ? 'selected' : ''}>缺勤</option><option value="leave" ${status === 'leave' ? 'selected' : ''}>请假</option></select></td>`;
+          tbody.appendChild(tr);
+        });
+        tbody.querySelectorAll('.att-student-link').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); switchPageWithStudent('analysis', a.dataset.id); }));
+      });
+    }
+
+    function saveAttendance() {
+      const date = document.getElementById('attendance-date').value;
+      const selects = document.querySelectorAll('.att-status-select');
+      const records = Array.from(selects).map(sel => ({ class_id: AppState.currentProfile.class_id, student_id: parseInt(sel.dataset.studentId), date, status: sel.value }));
+      supabase.from('attendance').upsert(records, { onConflict: 'class_id,student_id,date' }).then(() => {
+        showToast('考勤保存成功！', 'success');
+        loadAttendanceStats();
+        loadDashboard();
+      });
+    }
+
+    function loadAttendanceStats() {
+      const today = new Date().toISOString().split('T')[0];
+      const monthStart = new Date(); monthStart.setDate(1); const monthStartStr = monthStart.toISOString().split('T')[0];
+      Promise.all([
+        supabase.from('students').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id),
+        supabase.from('attendance').select('status').eq('class_id', AppState.currentProfile.class_id).eq('date', today),
+        supabase.from('attendance').select('status').eq('class_id', AppState.currentProfile.class_id).gte('date', monthStartStr)
+      ]).then(([studentRes, todayAttRes, monthAttRes]) => {
+        const totalStudents = studentRes.count || 0;
+        const todayAtt = todayAttRes.data || [];
+        const monthAtt = monthAttRes.data || [];
+        if (totalStudents > 0 && todayAtt.length > 0) {
+          const present = todayAtt.filter(a => a.status === 'present' || a.status === 'late').length;
+          document.getElementById('att-today-rate').textContent = Math.round((present / totalStudents) * 100) + '%';
+        } else document.getElementById('att-today-rate').textContent = '-';
+        if (monthAtt.length > 0) {
+          const presentRecords = monthAtt.filter(a => a.status === 'present' || a.status === 'late').length;
+          document.getElementById('att-month-rate').textContent = Math.round((presentRecords / monthAtt.length) * 100) + '%';
+          document.getElementById('att-absent-count').textContent = monthAtt.filter(a => a.status === 'absent').length;
+          document.getElementById('att-leave-count').textContent = monthAtt.filter(a => a.status === 'leave').length;
+        }
+      });
+    }
+
+    function loadLeaves() {
+      supabase.from('leaves').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).order('date', { ascending: false }).then(({ data }) => {
+        const tbody = document.getElementById('leaves-tbody');
+        tbody.innerHTML = '';
+        (data || []).forEach(l => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td><a href="#" class="leave-student-link" data-id="${l.student_id}">${escapeHtml(l.students?.name || '未知')}</a></td><td>${l.date}</td><td><span class="badge ${l.status === 'approved' ? 'badge-success' : l.status === 'rejected' ? 'badge-danger' : 'badge-warning'}">${l.status === 'pending' ? '待审批' : l.status === 'approved' ? '已批准' : '已拒绝'}</span></td><td>${l.status === 'pending' ? `<button class="btn btn-sm btn-success approve-leave" data-id="${l.id}">批</button> <button class="btn btn-sm btn-danger reject-leave" data-id="${l.id}">拒</button>` : '-'}</td>`;
+          tbody.appendChild(tr);
+        });
+        tbody.querySelectorAll('.approve-leave').forEach(btn => btn.addEventListener('click', () => updateLeaveStatus(btn.dataset.id, 'approved')));
+        tbody.querySelectorAll('.reject-leave').forEach(btn => btn.addEventListener('click', () => updateLeaveStatus(btn.dataset.id, 'rejected')));
+        tbody.querySelectorAll('.leave-student-link').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); switchPageWithStudent('analysis', a.dataset.id); }));
+      });
+    }
+
+    function updateLeaveStatus(id, status) {
+      supabase.from('leaves').update({ status }).eq('id', id).then(() => { showToast('请假状态已更新', 'success'); loadLeaves(); });
+    }
+
+    function openLeaveModal() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>新增请假</h3><div class="form-row" style="flex-direction:column;gap:8px;"><select id="leave-student"><option value="">选择学生</option>${AppState.attendanceStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}</select><input type="date" id="leave-date" value="${new Date().toISOString().split('T')[0]}"><input type="text" id="leave-reason" placeholder="请假原因"></div><div class="modal-actions"><button class="btn btn-outline" id="leave-cancel">取消</button><button class="btn btn-primary" id="leave-save">保存</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('leave-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('leave-save').addEventListener('click', async () => {
+        const student_id = modal.querySelector('#leave-student').value;
+        const date = modal.querySelector('#leave-date').value;
+        const reason = modal.querySelector('#leave-reason').value.trim();
+        if (!student_id || !date) { showToast('请选择学生和日期', 'error'); return; }
+        await supabase.from('leaves').insert({ class_id: AppState.currentProfile.class_id, student_id: parseInt(student_id), date, reason: reason || null });
+        modal.remove(); showToast('请假记录已添加', 'success'); loadLeaves();
+      });
+    }
+
+    function showAttStats(type) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content" style="max-width:750px;"><h3>考勤统计详情</h3><div id="att-stats-content">加载中...</div><div class="modal-actions"><button class="btn btn-outline" id="att-stats-close">关闭</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('att-stats-close').addEventListener('click', () => modal.remove());
+      const container = modal.querySelector('#att-stats-content');
+      if (type === 'today') {
+        const today = new Date().toISOString().split('T')[0];
+        supabase.from('attendance').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).eq('date', today).then(({ data }) => {
+          if (!data || data.length === 0) { container.innerHTML = '暂无考勤记录'; return; }
+          const statusMap = { present: '出勤', late: '迟到', absent: '缺勤', leave: '请假' };
+          container.innerHTML = `<div class="table-responsive"><table><thead><tr><th>学生</th><th>状态</th></tr></thead><tbody>${data.map(a => `<tr><td>${escapeHtml(a.students?.name || '')}</td><td>${statusMap[a.status]}</td></tr>`).join('')}</tbody></table></div>`;
+        });
+      } else if (type === 'month') {
+        const monthStart = new Date(); monthStart.setDate(1); const monthStartStr = monthStart.toISOString().split('T')[0];
+        supabase.from('attendance').select('date, status').eq('class_id', AppState.currentProfile.class_id).gte('date', monthStartStr).then(({ data }) => {
+          if (!data || data.length === 0) { container.innerHTML = '暂无记录'; return; }
+          const grouped = {};
+          data.forEach(d => { if (!grouped[d.date]) grouped[d.date] = { present: 0, late: 0, absent: 0, leave: 0, total: 0 }; grouped[d.date][d.status]++; grouped[d.date].total++; });
+          const dates = Object.keys(grouped).sort();
+          const ctx = document.createElement('canvas');
+          container.innerHTML = '';
+          container.appendChild(ctx);
+          new Chart(ctx, { type: 'line', data: { labels: dates, datasets: [{ label: '出勤率(%)', data: dates.map(d => Math.round((grouped[d].present + grouped[d].late) / grouped[d].total * 100)), borderColor: '#10b981' }] }, options: { responsive: true, scales: { y: { beginAtZero: true, max: 100 } } } });
+        });
+      } else if (type === 'absent') {
+        const monthStart = new Date(); monthStart.setDate(1); const monthStartStr = monthStart.toISOString().split('T')[0];
+        supabase.from('attendance').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).gte('date', monthStartStr).eq('status', 'absent').then(({ data }) => {
+          if (!data || data.length === 0) { container.innerHTML = '本月无缺勤记录'; return; }
+          const studentMap = {};
+          data.forEach(a => { if (!studentMap[a.student_id]) studentMap[a.student_id] = { name: a.students?.name, count: 0, dates: [] }; studentMap[a.student_id].count++; studentMap[a.student_id].dates.push(a.date); });
+          container.innerHTML = `<div class="table-responsive"><table><thead><tr><th>学生</th><th>缺勤次数</th><th>日期</th></tr></thead><tbody>${Object.values(studentMap).map(s => `<tr><td>${escapeHtml(s.name)}</td><td>${s.count}</td><td>${s.dates.join(', ')}</td></tr>`).join('')}</tbody></table></div>`;
+        });
+      } else if (type === 'leave') {
+        supabase.from('leaves').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).then(({ data }) => {
+          if (!data || data.length === 0) { container.innerHTML = '暂无请假记录'; return; }
+          container.innerHTML = `<div class="table-responsive"><table><thead><tr><th>学生</th><th>日期</th><th>原因</th><th>状态</th></tr></thead><tbody>${data.map(l => `<tr><td>${escapeHtml(l.students?.name || '')}</td><td>${l.date}</td><td>${escapeHtml(l.reason || '-')}</td><td>${l.status === 'approved' ? '已批准' : l.status === 'rejected' ? '已拒绝' : '待审批'}</td></tr>`).join('')}</tbody></table></div>`;
+        });
+      }
+    }
+
+    // ==================== 期末评语（完整版） ====================
+    function loadComments() {
+      const container = document.getElementById('page-comments');
+      container.innerHTML = `
+        <div class="page-header"><h2>期末评语</h2><div class="breadcrumb">首页 / 期末评语</div></div>
+        <div class="card">
+          <div class="card-header"><h3>生成评语</h3><div class="form-row">
+            <select id="comment-mode" style="max-width:160px;"><option value="local">本地模板</option><option value="ai">AI智能生成</option></select>
+            <select id="comment-style" style="max-width:160px;"><option value="encouraging">鼓励型</option><option value="suggestive">建议型</option><option value="humorous">幽默型</option></select>
+            <button class="btn btn-primary btn-sm" id="generate-comments-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> 生成</button>
+            <button class="btn btn-outline btn-sm" id="copy-comments-btn"><i class="fa-solid fa-copy"></i> 复制全部</button>
+          </div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>学生评语墙</h3></div>
+          <div id="comments-avatar-wall" class="avatar-wall"></div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      document.getElementById('generate-comments-btn').addEventListener('click', generateComments);
+      document.getElementById('copy-comments-btn').addEventListener('click', copyComments);
+      renderAvatarWall();
+    }
+
+    function renderAvatarWall() {
+      const container = document.getElementById('comments-avatar-wall');
+      if (AppState.allStudents.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fa-solid fa-users"></i><p>暂无学生</p></div>'; return; }
+      const colors = ['#6d5dfc','#10b981','#f59e0b','#ef4444','#3b82f6','#ec4899','#8b5cf6','#06b6d4'];
+      container.innerHTML = AppState.allStudents.map((s, idx) => {
+        const color = s.avatar_color || colors[idx % colors.length];
+        return `<div class="avatar-item" data-student-id="${s.id}"><div class="avatar-circle" style="background:${color};">${escapeHtml(s.name.charAt(0))}</div><span>${escapeHtml(s.name)}</span></div>`;
+      }).join('');
+      container.querySelectorAll('.avatar-item').forEach(item => item.addEventListener('click', () => showStudentComment(item.dataset.studentId)));
+    }
+
+    function showStudentComment(studentId) {
+      const student = AppState.allStudents.find(s => s.id == studentId);
+      if (!student) return;
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>${escapeHtml(student.name)} 的评语</h3><div id="comment-detail">加载中...</div><div class="modal-actions"><button class="btn btn-outline" id="comment-close">关闭</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('comment-close').addEventListener('click', () => modal.remove());
+      supabase.from('ai_reports').select('*').eq('student_id', studentId).eq('type', 'comment').maybeSingle().then(({ data }) => {
+        const container = modal.querySelector('#comment-detail');
+        if (data) { container.innerHTML = `<p>${escapeHtml(data.content)}</p>`; }
+        else { container.innerHTML = '<p>暂无评语，请先生成</p>'; }
+      });
+    }
+
+    async function generateComments() {
+      const mode = document.getElementById('comment-mode').value;
+      const style = document.getElementById('comment-style').value;
+      if (AppState.allStudents.length === 0) { showToast('没有学生', 'error'); return; }
+      if (mode === 'local') {
+        const templates = {
+          encouraging: ['学习认真，成绩稳定。继续保持！','乐于助人，团结同学，是班级的榜样。','课堂表现积极，思维活跃，值得表扬。'],
+          suggestive: ['建议加强语文阅读，提升理解能力。','数学基础不错，但需要多练习应用题。','英语听说能力有待提高，建议每天坚持朗读。'],
+          humorous: ['你是班级的开心果，但学习也要跟上哦。','脑袋很聪明，就是偶尔偷懒，加油！','作业总是“明天交”，明天已经堆积如山啦。']
+        };
+        const tplList = templates[style] || templates.encouraging;
+        AppState.commentList = AppState.allStudents.map(s => ({ student: s.name, comment: `${s.name}同学，${tplList[Math.floor(Math.random()*tplList.length)]}` }));
+        AppState.allStudents.forEach(s => {
+          const comment = AppState.commentList.find(c => c.student === s.name)?.comment || '';
+          supabase.from('ai_reports').upsert({ class_id: AppState.currentProfile.class_id, student_id: s.id, type: 'comment', content: comment });
+        });
+        showToast('已生成本地评语', 'success');
+        renderAvatarWall();
+      } else {
+        showToast('正在调用AI生成，请稍候...', 'warning');
+        const results = await Promise.all(AppState.allStudents.map(async (s) => {
+          const payload = { name: s.name, gender: s.gender, role: s.role, style };
+          const content = await callAI('comment', payload);
+          if (content) { await supabase.from('ai_reports').upsert({ class_id: AppState.currentProfile.class_id, student_id: s.id, type: 'comment', content }); }
+          return { student: s.name, comment: content || '暂无' };
+        }));
+        AppState.commentList = results;
+        showToast('AI评语生成完成', 'success');
+        renderAvatarWall();
+      }
+    }
+
+    function copyComments() {
+      if (AppState.commentList.length === 0) { showToast('暂无评语', 'warning'); return; }
+      const text = AppState.commentList.map(c => `${c.student}：${c.comment}`).join('\n');
+      navigator.clipboard.writeText(text).then(() => showToast('已复制', 'success'));
+    }
+
+    // ==================== 学生综合分析（完整版） ====================
+    function loadAnalysis() {
+      const container = document.getElementById('page-analysis');
+      container.innerHTML = `
+        <div class="page-header"><h2>学生综合分析</h2><div class="breadcrumb">首页 / 综合分析</div></div>
+        <div class="card"><div class="form-row">
+          <select id="analysis-student-select" style="max-width:250px;"><option value="">请选择学生</option>${AppState.allStudents.map(s => `<option value="${s.id}" ${AppState.selectedStudentId == s.id ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}</select>
+          <button class="btn btn-primary btn-sm" id="ai-analysis-btn"><i class="fa-solid fa-robot"></i> AI深度分析</button>
+          <button class="btn btn-outline btn-sm" id="view-grades-btn"><i class="fa-solid fa-chart-bar"></i> 查看成绩</button>
+        </div></div>
+        <div id="analysis-content" class="empty-state"><i class="fa-solid fa-user-graduate"></i><p>请选择学生</p></div>`;
+      if (AppState.selectedStudentId) {
+        document.getElementById('analysis-student-select').value = AppState.selectedStudentId;
+        loadAnalysisData(AppState.selectedStudentId);
+      }
+      document.getElementById('analysis-student-select').addEventListener('change', (e) => {
+        AppState.selectedStudentId = e.target.value;
+        if (e.target.value) loadAnalysisData(e.target.value);
+        else document.getElementById('analysis-content').innerHTML = '<div class="empty-state"><i class="fa-solid fa-user-graduate"></i><p>请选择学生</p></div>';
+      });
+      document.getElementById('ai-analysis-btn').addEventListener('click', () => {
+        if (AppState.selectedStudentId) generateAIAnalysis(AppState.selectedStudentId);
+        else showToast('请先选择学生', 'error');
+      });
+      document.getElementById('view-grades-btn').addEventListener('click', () => {
+        if (AppState.selectedStudentId) switchPageWithStudent('grades', AppState.selectedStudentId);
+        else showToast('请先选择学生', 'error');
+      });
+    }
+
+    function loadAnalysisData(studentId) {
+      const student = AppState.allStudents.find(s => s.id == studentId);
+      if (!student) return;
+      const container = document.getElementById('analysis-content');
+      container.innerHTML = '加载中...';
+      Promise.all([
+        supabase.from('grades').select('*').eq('student_id', studentId),
+        supabase.from('profile_records').select('*').eq('student_id', studentId).order('record_date', { ascending: false }),
+        supabase.from('attendance').select('*').eq('student_id', studentId),
+        supabase.from('ai_reports').select('*').eq('student_id', studentId).eq('type', 'analysis').maybeSingle()
+      ]).then(([gradesRes, recordsRes, attendanceRes, aiReportRes]) => {
+        const grades = gradesRes.data || [];
+        const records = recordsRes.data || [];
+        const aiReport = aiReportRes.data;
+        let html = '';
+        const colors = ['#6d5dfc','#10b981','#f59e0b','#ef4444','#3b82f6','#ec4899','#8b5cf6','#06b6d4'];
+        const color = student.avatar_color || colors[Math.floor(Math.random()*colors.length)];
+        html += `<div class="card" style="display:flex;align-items:center;gap:15px;">
+          <div class="avatar-circle" style="background:${color};width:60px;height:60px;font-size:24px;">${escapeHtml(student.name.charAt(0))}</div>
+          <div style="flex:1;"><h3 style="color:#fff;">${escapeHtml(student.name)}</h3>
+          <p style="color:var(--text-secondary);font-size:12px;">学号: ${escapeHtml(student.student_no||'-')} | 性别: ${escapeHtml(student.gender||'-')} | 族别: ${escapeHtml(student.ethnicity||'-')} | 座位: ${student.seat||'-'} | 职务: ${escapeHtml(student.role||'-')}</p></div>
+          <span class="badge badge-info">综合等级: 待评估</span></div>`;
+        if (grades.length > 0) {
+          const subjects = ['语文','数学','英语','物理','化学','生物','政治','历史','地理'];
+          const studentScores = subjects.map(sub => {
+            const latest = grades.filter(g => g.subject === sub).sort((a,b) => b.id - a.id)[0];
+            return latest ? parseFloat(latest.score) : 0;
+          });
+          html += `<div class="card"><h4 style="color:#fff;">能力雷达图</h4><canvas id="analysis-radar" height="200"></canvas></div>`;
+          setTimeout(() => {
+            const ctx = document.getElementById('analysis-radar');
+            if (ctx) { new Chart(ctx, { type: 'radar', data: { labels: subjects, datasets: [{ label: '学生得分', data: studentScores, borderColor: '#6d5dfc', backgroundColor: 'rgba(109,93,252,0.2)' }] }, options: { responsive: true, scales: { r: { beginAtZero: true, max: 100 } } } }); }
+          }, 100);
+        }
+        if (records.length > 0) {
+          html += '<div class="card"><h4 style="color:#fff;">成长记录时间轴</h4>';
+          records.slice(0, 10).forEach(r => {
+            const typeColor = r.type === 'praise' ? '#10b981' : r.type === 'discipline' ? '#ef4444' : '#3b82f6';
+            html += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:5px;"><span style="width:10px;height:10px;border-radius:50%;background:${typeColor};"></span><span>${escapeHtml(r.content)}</span><span style="font-size:10px;color:var(--text-secondary);margin-left:auto;">${r.record_date}</span></div>`;
+          });
+          html += '</div>';
+        }
+        if (aiReport) { html += `<div class="card"><h4 style="color:#fff;">AI 分析报告</h4><p>${escapeHtml(aiReport.content)}</p></div>`; }
+        container.innerHTML = html;
+      });
+    }
+
+    async function generateAIAnalysis(studentId) {
+      const student = AppState.allStudents.find(s => s.id == studentId);
+      if (!student) return;
+      showToast('正在生成AI分析，请稍候...', 'warning');
+      const payload = { name: student.name, gender: student.gender, role: student.role };
+      const content = await callAI('analysis', payload);
+      if (content) {
+        await supabase.from('ai_reports').upsert({ class_id: AppState.currentProfile.class_id, student_id: studentId, type: 'analysis', content });
+        loadAnalysisData(studentId);
+        showToast('AI分析完成', 'success');
+      }
+    }
+
+    // ==================== 班级评价 ====================
+    function loadEvaluation() {
+      const container = document.getElementById('page-evaluation');
+      container.innerHTML = `
+        <div class="page-header"><h2>班级评价</h2><div class="breadcrumb">首页 / 班级评价</div></div>
+        <div class="card">
+          <div class="form-row">
+            <select id="eval-student" style="max-width:130px;"><option value="">选择学生</option>${AppState.allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}</select>
+            <select id="eval-dimension" style="max-width:130px;"><option value="class_performance">课堂表现</option><option value="homework">作业情况</option><option value="behavior">行为习惯</option><option value="activity">活动参与</option></select>
+            <input type="text" id="eval-content" placeholder="评价内容" style="flex:2;">
+            <button class="btn btn-primary btn-sm" id="add-eval-btn">添加</button>
+          </div>
+        </div>
+        <div class="card"><div id="eval-list" class="empty-state"><i class="fa-solid fa-star"></i><p>暂无评价</p></div></div>`;
+      document.getElementById('add-eval-btn').addEventListener('click', async () => {
+        const student_id = document.getElementById('eval-student').value;
+        const content = document.getElementById('eval-content').value.trim();
+        if (!student_id || !content) { showToast('请填写完整', 'error'); return; }
+        await supabase.from('eval_records').insert({ class_id: AppState.currentProfile.class_id, student_id: parseInt(student_id), dimension: document.getElementById('eval-dimension').value, content, eval_date: new Date().toISOString().split('T')[0] });
+        document.getElementById('eval-content').value = ''; showToast('评价已添加', 'success'); loadEvalList();
+      });
+      loadEvalList();
+    }
+
+    function loadEvalList() {
+      supabase.from('eval_records').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).order('created_at', { ascending: false }).limit(20).then(({ data }) => {
+        const container = document.getElementById('eval-list');
+        if (!data || data.length === 0) return;
+        container.innerHTML = data.map(r => `<div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px;margin-bottom:4px;display:flex;justify-content:space-between;"><span><a href="#" class="eval-student-link" data-id="${r.student_id}"><strong>${escapeHtml(r.students?.name || '')}</strong></a>：${escapeHtml(r.content)}</span><span style="font-size:10px;color:var(--text-secondary);">${r.eval_date || ''}</span></div>`).join('');
+        container.querySelectorAll('.eval-student-link').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); switchPageWithStudent('analysis', a.dataset.id); }));
+      });
+    }
+
+    // ==================== 家校沟通 ====================
+    function loadCommunication() {
+      const container = document.getElementById('page-communication');
+      container.innerHTML = `
+        <div class="page-header"><h2>家校沟通</h2><div class="breadcrumb">首页 / 家校沟通</div></div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-icon"><i class="fa-solid fa-address-book"></i></div><div class="stat-info"><h4 id="comm-contact-rate">-</h4><p>台账完整度</p></div></div>
+          <div class="stat-card"><div class="stat-icon green"><i class="fa-solid fa-house-chimney"></i></div><div class="stat-info"><h4 id="comm-visit-count">0</h4><p>家访次数</p></div></div>
+          <div class="stat-card"><div class="stat-icon orange"><i class="fa-solid fa-users-rectangle"></i></div><div class="stat-info"><h4 id="comm-meeting-count">0</h4><p>家长会</p></div></div>
+          <div class="stat-card"><div class="stat-icon red"><i class="fa-solid fa-bullhorn"></i></div><div class="stat-info"><h4 id="comm-notice-count">0</h4><p>群通知</p></div></div>
+        </div>
+        <div class="comm-card-list">
+          <div class="comm-card" onclick="openCommDetail('contacts')"><h4><i class="fa-solid fa-address-book"></i> 家长台账</h4><p id="comm-contacts-preview">加载中...</p></div>
+          <div class="comm-card" onclick="openCommDetail('visits')"><h4><i class="fa-solid fa-house-chimney"></i> 家访记录</h4><p id="comm-visits-preview">加载中...</p></div>
+          <div class="comm-card" onclick="openCommDetail('meetings')"><h4><i class="fa-solid fa-users-rectangle"></i> 家长会记录</h4><p id="comm-meetings-preview">加载中...</p></div>
+          <div class="comm-card" onclick="openCommDetail('notices')"><h4><i class="fa-solid fa-bullhorn"></i> 群通知</h4><p id="comm-group-notices-preview">加载中...</p></div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      loadCommStats();
+      loadCommPreviews();
+    }
+
+    function loadCommStats() {
+      Promise.all([
+        supabase.from('parent_contacts').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id),
+        supabase.from('students').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id),
+        supabase.from('home_visits').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id),
+        supabase.from('parent_meetings').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id),
+        supabase.from('group_notices').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id)
+      ]).then(([contactRes, studentRes, visitRes, meetingRes, noticeRes]) => {
+        const studentCount = studentRes.count || 0;
+        const contactCount = contactRes.count || 0;
+        document.getElementById('comm-contact-rate').textContent = studentCount > 0 ? Math.round((contactCount / studentCount) * 100) + '%' : '-';
+        document.getElementById('comm-visit-count').textContent = visitRes.count || 0;
+        document.getElementById('comm-meeting-count').textContent = meetingRes.count || 0;
+        document.getElementById('comm-notice-count').textContent = noticeRes.count || 0;
+      });
+    }
+
+    function loadCommPreviews() {
+      supabase.from('parent_contacts').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).limit(3).then(({ data }) => {
+        document.getElementById('comm-contacts-preview').textContent = data && data.length > 0 ? data.map(c => c.students?.name).join('、') + ' 等' : '暂无记录';
+      });
+      supabase.from('home_visits').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).limit(3).then(({ data }) => {
+        document.getElementById('comm-visits-preview').textContent = data && data.length > 0 ? data.map(v => v.students?.name).join('、') + ' 等' : '暂无记录';
+      });
+      supabase.from('parent_meetings').select('*').eq('class_id', AppState.currentProfile.class_id).limit(3).then(({ data }) => {
+        document.getElementById('comm-meetings-preview').textContent = data && data.length > 0 ? data.map(m => m.theme).join('、') : '暂无记录';
+      });
+      supabase.from('group_notices').select('*').eq('class_id', AppState.currentProfile.class_id).limit(3).then(({ data }) => {
+        document.getElementById('comm-group-notices-preview').textContent = data && data.length > 0 ? data.map(n => n.content).join('、') : '暂无记录';
+      });
+    }
+
+    window.openCommDetail = function(type) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      const titles = { contacts: '家长台账', visits: '家访记录', meetings: '家长会记录', notices: '群通知' };
+      modal.innerHTML = `<div class="modal-content" style="max-width:750px;"><h3>${titles[type]}</h3><div id="comm-detail-content">加载中...</div><div class="modal-actions"><button class="btn btn-outline" id="comm-close">关闭</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('comm-close').addEventListener('click', () => modal.remove());
+      const content = modal.querySelector('#comm-detail-content');
+      if (type === 'contacts') loadContactsDetail(content);
+      else if (type === 'visits') loadVisitsDetail(content);
+      else if (type === 'meetings') loadMeetingsDetail(content);
+      else if (type === 'notices') loadGroupNoticesDetail(content);
+    };
+
+    function loadContactsDetail(container) {
+      supabase.from('parent_contacts').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).then(({ data }) => {
+        container.innerHTML = `<button class="btn btn-primary btn-sm" id="add-contact-btn" style="margin-bottom:8px;"><i class="fa-solid fa-plus"></i> 添加</button><div class="table-responsive"><table><thead><tr><th>学生</th><th>家长</th><th>关系</th><th>电话</th><th>操作</th></tr></thead><tbody>${data.map(c => `<tr><td><a href="#" class="contact-student-link" data-id="${c.student_id}">${escapeHtml(c.students?.name || '')}</a></td><td>${escapeHtml(c.parent_name || '-')}</td><td>${escapeHtml(c.relation || '-')}</td><td>${escapeHtml(c.phone || '-')}</td><td><button class="btn btn-sm btn-danger delete-contact" data-id="${c.id}">删除</button></td></tr>`).join('')}</tbody></table></div>`;
+        container.querySelector('#add-contact-btn').addEventListener('click', openContactModal);
+        container.querySelectorAll('.delete-contact').forEach(btn => btn.addEventListener('click', async () => { await supabase.from('parent_contacts').delete().eq('id', btn.dataset.id); loadContactsDetail(container); }));
+        container.querySelectorAll('.contact-student-link').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); switchPageWithStudent('analysis', a.dataset.id); }));
+      });
+    }
+
+    function loadVisitsDetail(container) {
+      supabase.from('home_visits').select('*, students(name)').eq('class_id', AppState.currentProfile.class_id).order('visit_date', { ascending: false }).then(({ data }) => {
+        container.innerHTML = `<button class="btn btn-primary btn-sm" id="add-visit-btn" style="margin-bottom:8px;"><i class="fa-solid fa-plus"></i> 新增</button><div class="table-responsive"><table><thead><tr><th>学生</th><th>日期</th><th>内容</th><th>状态</th></tr></thead><tbody>${data.map(v => `<tr><td><a href="#" class="visit-student-link" data-id="${v.student_id}">${escapeHtml(v.students?.name || '')}</a></td><td>${v.visit_date || '-'}</td><td>${escapeHtml(v.content || '-')}</td><td>${v.status === 'completed' ? '已完成' : '待家访'}</td></tr>`).join('')}</tbody></table></div>`;
+        container.querySelector('#add-visit-btn').addEventListener('click', () => openVisitModal(() => loadVisitsDetail(container)));
+        container.querySelectorAll('.visit-student-link').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); switchPageWithStudent('analysis', a.dataset.id); }));
+      });
+    }
+
+    function loadMeetingsDetail(container) {
+      supabase.from('parent_meetings').select('*').eq('class_id', AppState.currentProfile.class_id).then(({ data }) => {
+        container.innerHTML = `<button class="btn btn-primary btn-sm" id="add-meeting-btn" style="margin-bottom:8px;"><i class="fa-solid fa-plus"></i> 新增</button><div class="table-responsive"><table><thead><tr><th>主题</th><th>日期</th><th>到会率</th><th>备注</th></tr></thead><tbody>${data.map(m => `<tr><td>${escapeHtml(m.theme)}</td><td>${m.meeting_date || '-'}</td><td>${m.attendance_rate ? m.attendance_rate + '%' : '-'}</td><td>${escapeHtml(m.notes || '-')}</td></tr>`).join('')}</tbody></table></div>`;
+        container.querySelector('#add-meeting-btn').addEventListener('click', () => openMeetingModal(() => loadMeetingsDetail(container)));
+      });
+    }
+
+    function loadGroupNoticesDetail(container) {
+      supabase.from('group_notices').select('*').eq('class_id', AppState.currentProfile.class_id).order('notice_date', { ascending: false }).then(({ data }) => {
+        container.innerHTML = `<button class="btn btn-primary btn-sm" id="add-group-notice-btn" style="margin-bottom:8px;"><i class="fa-solid fa-plus"></i> 发布</button><div class="table-responsive"><table><thead><tr><th>内容</th><th>日期</th><th>重要</th></tr></thead><tbody>${data.map(n => `<tr><td>${escapeHtml(n.content)}</td><td>${n.notice_date || '-'}</td><td>${n.is_important ? '<span class="badge badge-danger">重要</span>' : ''}</td></tr>`).join('')}</tbody></table></div>`;
+        container.querySelector('#add-group-notice-btn').addEventListener('click', () => openGroupNoticeModal(() => loadGroupNoticesDetail(container)));
+      });
+    }
+
+    function openContactModal() {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>添加家长联系人</h3><div class="form-row" style="flex-direction:column;gap:8px;"><select id="contact-student"><option value="">选择学生</option>${AppState.allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}</select><input type="text" id="contact-name" placeholder="家长姓名"><input type="text" id="contact-relation" placeholder="关系"><input type="text" id="contact-phone" placeholder="电话"></div><div class="modal-actions"><button class="btn btn-outline" id="contact-cancel">取消</button><button class="btn btn-primary" id="contact-save">保存</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('contact-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('contact-save').addEventListener('click', async () => {
+        const student_id = modal.querySelector('#contact-student').value;
+        if (!student_id) { showToast('请选择学生', 'error'); return; }
+        await supabase.from('parent_contacts').insert({ class_id: AppState.currentProfile.class_id, student_id: parseInt(student_id), parent_name: modal.querySelector('#contact-name').value.trim() || null, relation: modal.querySelector('#contact-relation').value.trim() || null, phone: modal.querySelector('#contact-phone').value.trim() || null });
+        modal.remove(); showToast('联系人已添加', 'success');
+      });
+    }
+
+    function openVisitModal(callback) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>新增家访</h3><div class="form-row" style="flex-direction:column;gap:8px;"><select id="visit-student"><option value="">选择学生</option>${AppState.allStudents.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}</select><input type="date" id="visit-date"><input type="text" id="visit-content" placeholder="家访内容"><select id="visit-status"><option value="pending">待家访</option><option value="completed">已完成</option></select></div><div class="modal-actions"><button class="btn btn-outline" id="visit-cancel">取消</button><button class="btn btn-primary" id="visit-save">保存</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('visit-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('visit-save').addEventListener('click', async () => {
+        const student_id = modal.querySelector('#visit-student').value;
+        if (!student_id) { showToast('请选择学生', 'error'); return; }
+        await supabase.from('home_visits').insert({ class_id: AppState.currentProfile.class_id, student_id: parseInt(student_id), visit_date: modal.querySelector('#visit-date').value || null, content: modal.querySelector('#visit-content').value.trim() || null, status: modal.querySelector('#visit-status').value });
+        modal.remove(); showToast('家访记录已添加', 'success'); if (callback) callback();
+      });
+    }
+
+    function openMeetingModal(callback) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>新增家长会</h3><div class="form-row" style="flex-direction:column;gap:8px;"><input type="text" id="meeting-theme" placeholder="主题"><input type="date" id="meeting-date"><input type="number" id="meeting-rate" placeholder="到会率(%)"><input type="text" id="meeting-notes" placeholder="备注"></div><div class="modal-actions"><button class="btn btn-outline" id="meeting-cancel">取消</button><button class="btn btn-primary" id="meeting-save">保存</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('meeting-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('meeting-save').addEventListener('click', async () => {
+        const theme = modal.querySelector('#meeting-theme').value.trim();
+        if (!theme) { showToast('请输入主题', 'error'); return; }
+        await supabase.from('parent_meetings').insert({ class_id: AppState.currentProfile.class_id, theme, meeting_date: modal.querySelector('#meeting-date').value || null, attendance_rate: modal.querySelector('#meeting-rate').value ? parseFloat(modal.querySelector('#meeting-rate').value) : null, notes: modal.querySelector('#meeting-notes').value.trim() || null });
+        modal.remove(); showToast('家长会记录已添加', 'success'); if (callback) callback();
+      });
+    }
+
+    function openGroupNoticeModal(callback) {
+      const modal = document.createElement('div'); modal.className = 'modal-overlay';
+      modal.innerHTML = `<div class="modal-content"><h3>发布群通知</h3><div class="form-row" style="flex-direction:column;gap:8px;"><textarea id="group-notice-content" placeholder="通知内容"></textarea><input type="date" id="group-notice-date"><label><input type="checkbox" id="group-notice-important"> 重要</label></div><div class="modal-actions"><button class="btn btn-outline" id="notice-cancel">取消</button><button class="btn btn-primary" id="notice-save">发布</button></div></div>`;
+      document.body.appendChild(modal);
+      document.getElementById('notice-cancel').addEventListener('click', () => modal.remove());
+      document.getElementById('notice-save').addEventListener('click', async () => {
+        const content = modal.querySelector('#group-notice-content').value.trim();
+        if (!content) { showToast('请输入内容', 'error'); return; }
+        await supabase.from('group_notices').insert({ class_id: AppState.currentProfile.class_id, content, notice_date: modal.querySelector('#group-notice-date').value || null, is_important: modal.querySelector('#group-notice-important').checked });
+        modal.remove(); showToast('群通知已发布', 'success'); if (callback) callback();
+      });
+    }
+
+    // ==================== 通知公告 ====================
+    function loadNotices() {
+      const container = document.getElementById('page-notices');
+      container.innerHTML = `<div class="page-header"><h2>通知公告</h2></div><div class="card"><div class="form-row"><input type="text" id="notice-title" placeholder="标题" style="max-width:250px;"><input type="text" id="notice-content" placeholder="内容" style="flex:2;"><label><input type="checkbox" id="notice-pinned"> 置顶</label><button class="btn btn-primary btn-sm" id="add-notice-btn">发布</button></div></div><div id="notices-list" class="empty-state"><i class="fa-regular fa-bell"></i><p>暂无通知</p></div>`;
+      document.getElementById('add-notice-btn').addEventListener('click', async () => {
+        const title = document.getElementById('notice-title').value.trim();
+        if (!title) { showToast('请输入标题', 'error'); return; }
+        await supabase.from('notices').insert({ class_id: AppState.currentProfile.class_id, title, content: document.getElementById('notice-content').value.trim() || null, is_pinned: document.getElementById('notice-pinned').checked });
+        document.getElementById('notice-title').value = ''; document.getElementById('notice-content').value = '';
+        showToast('通知已发布', 'success'); loadNotices();
+      });
+      loadNoticesList();
+    }
+
+    function loadNoticesList() {
+      supabase.from('notices').select('*').eq('class_id', AppState.currentProfile.class_id).order('is_pinned', { ascending: false }).order('created_at', { ascending: false }).then(({ data }) => {
+        const container = document.getElementById('notices-list');
+        if (!data || data.length === 0) return;
+        container.innerHTML = data.map(n => `<div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px;margin-bottom:4px;"><strong>${escapeHtml(n.title)}</strong>${n.is_pinned ? ' <span class="badge badge-danger">置顶</span>' : ''}<p>${escapeHtml(n.content || '')}</p><span style="font-size:10px;color:var(--text-secondary);">${new Date(n.created_at).toLocaleString('zh-CN')}</span></div>`).join('');
+      });
+    }
+
+    // ==================== 班级朋友圈 ====================
+    let currentPostCategory = '';
+
+    function loadMoments() {
+      const container = document.getElementById('page-moments');
+      container.innerHTML = `
+        <div class="page-header"><h2>班级朋友圈</h2><div class="breadcrumb">首页 / 班级朋友圈</div></div>
+        <div class="card">
+          <div class="form-row"><textarea id="post-content" placeholder="分享班级精彩瞬间..." style="flex:2;height:50px;"></textarea><input type="file" id="post-images-input" accept="image/*" multiple style="max-width:180px;"><select id="post-category" style="max-width:130px;"><option value="class_activity">班级活动</option><option value="personal_growth">个人成长</option><option value="honor">荣誉时刻</option><option value="daily">日常点滴</option></select><button class="btn btn-primary btn-sm" id="publish-post-btn">发布</button></div>
+        </div>
+        <div class="card">
+          <div class="form-row" id="post-category-filter">
+            <button class="btn btn-sm ${currentPostCategory === '' ? 'btn-primary' : 'btn-outline'}" data-category="">全部</button>
+            <button class="btn btn-sm ${currentPostCategory === 'class_activity' ? 'btn-primary' : 'btn-outline'}" data-category="class_activity">班级活动</button>
+            <button class="btn btn-sm ${currentPostCategory === 'personal_growth' ? 'btn-primary' : 'btn-outline'}" data-category="personal_growth">个人成长</button>
+            <button class="btn btn-sm ${currentPostCategory === 'honor' ? 'btn-primary' : 'btn-outline'}" data-category="honor">荣誉时刻</button>
+            <button class="btn btn-sm ${currentPostCategory === 'daily' ? 'btn-primary' : 'btn-outline'}" data-category="daily">日常点滴</button>
+          </div>
+          <div id="moments-list"></div>
+        </div>`;
+      if (!AppState.currentProfile) return;
+      document.getElementById('publish-post-btn').addEventListener('click', publishPost);
+      document.querySelectorAll('#post-category-filter button').forEach(btn => btn.addEventListener('click', () => { currentPostCategory = btn.dataset.category; loadMoments(); }));
+      loadMomentsList();
+    }
+
+    function loadMomentsList() {
+      let query = supabase.from('posts').select('*').eq('class_id', AppState.currentProfile.class_id).order('created_at', { ascending: false }).limit(50);
+      if (currentPostCategory) query = query.eq('category', currentPostCategory);
+      query.then(async ({ data: posts }) => {
+        const container = document.getElementById('moments-list');
+        if (!posts || posts.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fa-solid fa-images"></i><p>暂无动态</p></div>'; return; }
+        let html = '';
+        for (const post of posts) {
+          const { data: media } = await supabase.from('post_media').select('*').eq('post_id', post.id);
+          html += `<div class="post-card" data-post-id="${post.id}">
+            <div class="post-header"><div class="post-avatar">${post.teacher_id ? post.teacher_id.substring(0,1).toUpperCase() : 'A'}</div><div><div style="font-weight:600;">教师</div><div style="font-size:10px;color:var(--text-secondary);">${new Date(post.created_at).toLocaleString('zh-CN')}</div></div></div>
+            <p style="margin-bottom:6px;">${escapeHtml(post.content || '')}</p>
+            ${media && media.length > 0 ? `<div class="post-media-grid">${media.slice(0,3).map(m => `<img src="${m.media_url}">`).join('')}${media.length > 3 ? `<div style="display:flex;align-items:center;justify-content:center;color:var(--text-secondary);">+${media.length - 3}</div>` : ''}</div>` : ''}
+          </div>`;
+        }
+        container.innerHTML = html;
+        container.querySelectorAll('.post-card').forEach(card => card.addEventListener('click', () => openPostDetail(card.dataset.postId)));
+      });
+    }
+
+    function openPostDetail(postId) {
+      Promise.all([
+        supabase.from('posts').select('*').eq('id', postId).single(),
+        supabase.from('post_media').select('*').eq('post_id', postId)
+      ]).then(([postRes, mediaRes]) => {
+        const post = postRes.data;
+        if (!post) return;
+        const media = mediaRes.data || [];
+        const modal = document.createElement('div'); modal.className = 'modal-overlay';
+        modal.innerHTML = `<div class="modal-content" style="max-width:700px;"><h3>动态详情</h3>
+          <p style="margin-bottom:8px;">${escapeHtml(post.content || '')}</p>
+          <div class="post-media-grid">${media.map(m => `<img src="${m.media_url}" style="cursor:pointer;">`).join('')}</div>
+          <p style="font-size:11px;color:var(--text-secondary);margin-top:8px;">${new Date(post.created_at).toLocaleString('zh-CN')} | 分类：${post.category || '-'}</p>
+          <div class="modal-actions"><button class="btn btn-outline" id="post-close">关闭</button></div></div>`;
+        document.body.appendChild(modal);
+        document.getElementById('post-close').addEventListener('click', () => modal.remove());
+        modal.querySelectorAll('.post-media-grid img').forEach(img => img.addEventListener('click', () => window.open(img.src)));
+      });
+    }
+
+    function publishPost() {
+      const content = document.getElementById('post-content').value.trim();
+      const category = document.getElementById('post-category').value;
+      const imagesInput = document.getElementById('post-images-input');
+      if (!content && imagesInput.files.length === 0) { showToast('请输入内容或选择图片', 'error'); return; }
+      supabase.from('posts').insert({ class_id: AppState.currentProfile.class_id, teacher_id: AppState.currentUser.id, content: content || null, category }).select().single().then(async ({ data: post, error }) => {
+        if (error) { showToast('发布失败', 'error'); return; }
+        if (imagesInput.files.length > 0) {
+          for (const file of imagesInput.files) {
+            const compressed = await compressImage(file, 1200, 0.7);
+            const fileName = `${post.id}_${Date.now()}_${Math.random().toString(36).substring(2,6)}.jpg`;
+            await supabase.storage.from('post-images').upload(fileName, compressed);
+            const { data: urlData } = supabase.storage.from('post-images').getPublicUrl(fileName);
+            await supabase.from('post_media').insert({ post_id: post.id, media_url: urlData.publicUrl });
+          }
+        }
+        document.getElementById('post-content').value = ''; imagesInput.value = '';
+        showToast('发布成功', 'success'); loadMoments();
+      });
+    }
+
+    // ==================== 数据洞察 ====================
+    function loadInsights() {
+      const container = document.getElementById('page-insights');
+      container.innerHTML = `<div class="page-header"><h2>数据洞察</h2></div><div class="stats-grid"><div class="stat-card"><div class="stat-icon"><i class="fa-solid fa-users"></i></div><div class="stat-info"><h4 id="insight-total-students">0</h4><p>学生总数</p></div></div><div class="stat-card"><div class="stat-icon green"><i class="fa-solid fa-chart-line"></i></div><div class="stat-info"><h4 id="insight-avg-score">-</h4><p>最近均分</p></div></div><div class="stat-card"><div class="stat-icon orange"><i class="fa-solid fa-user-check"></i></div><div class="stat-info"><h4 id="insight-attendance-rate">-</h4><p>本月出勤</p></div></div></div><div class="card"><canvas id="insight-chart" height="150"></canvas></div>`;
+      loadInsightsData();
+    }
+
+    function loadInsightsData() {
+      supabase.from('students').select('*', { count: 'exact', head: true }).eq('class_id', AppState.currentProfile.class_id).then(({ count }) => {
+        document.getElementById('insight-total-students').textContent = count || 0;
+      });
+      supabase.from('exams').select('*').eq('class_id', AppState.currentProfile.class_id).order('exam_date', { ascending: true }).then(async ({ data: exams }) => {
+        if (exams && exams.length > 0) {
+          const labels = exams.map(e => e.exam_name);
+          const avgScores = [];
+          for (const exam of exams) {
+            const { data: grades } = await supabase.from('grades').select('score').eq('exam_id', exam.id);
+            avgScores.push(grades.length > 0 ? grades.reduce((sum, g) => sum + parseFloat(g.score), 0) / grades.length : null);
+          }
+          const ctx = document.getElementById('insight-chart').getContext('2d');
+          new Chart(ctx, { type: 'line', data: { labels, datasets: [{ label: '班级均分', data: avgScores, borderColor: '#6d5dfc', backgroundColor: 'rgba(109,93,252,0.1)', tension: 0.3, fill: true }] }, options: { responsive: true, scales: { y: { beginAtZero: false } }, plugins: { legend: { labels: { color: '#e2e8f0' } } } } });
+          const latestAvg = avgScores[avgScores.length - 1];
+          if (latestAvg) document.getElementById('insight-avg-score').textContent = latestAvg.toFixed(1);
+        }
+      });
+      const monthStart = new Date(); monthStart.setDate(1);
+      supabase.from('attendance').select('status').eq('class_id', AppState.currentProfile.class_id).gte('date', monthStart.toISOString().split('T')[0]).then(({ data }) => {
+        if (data && data.length > 0) {
+          const present = data.filter(a => a.status === 'present' || a.status === 'late').length;
+          document.getElementById('insight-attendance-rate').textContent = Math.round((present / data.length) * 100) + '%';
+        }
+      });
+    }
+
+    // ==================== 通知中心 ====================
+    function loadNotifications() {
+      const container = document.getElementById('page-notifications');
+      container.innerHTML = `<div class="page-header"><h2>通知中心</h2></div><div class="card"><button class="btn btn-outline btn-sm" id="mark-all-read-btn">全部已读</button><div id="notifications-list" class="empty-state"><i class="fa-regular fa-bell"></i><p>暂无通知</p></div></div>`;
+      document.getElementById('mark-all-read-btn').addEventListener('click', async () => { await supabase.from('notifications').update({ is_read: true }).eq('class_id', AppState.currentProfile.class_id); showToast('已全部标记为已读', 'success'); loadNotifications(); });
+      loadNotificationsList();
+    }
+
+    function loadNotificationsList() {
+      supabase.from('notifications').select('*').eq('class_id', AppState.currentProfile.class_id).order('created_at', { ascending: false }).limit(20).then(({ data }) => {
+        const container = document.getElementById('notifications-list');
+        if (!data || data.length === 0) return;
+        container.innerHTML = data.map(n => `<div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px;margin-bottom:4px;${!n.is_read ? 'border-left:3px solid var(--primary);' : ''}"><strong>${escapeHtml(n.title)}</strong><p>${escapeHtml(n.content || '')}</p><span style="font-size:10px;color:var(--text-secondary);">${new Date(n.created_at).toLocaleString('zh-CN')}</span></div>`).join('');
+      });
+    }
+
+    // ==================== 任务协作 ====================
+    function loadTasks() {
+      const container = document.getElementById('page-tasks');
+      container.innerHTML = `<div class="page-header"><h2>任务协作</h2></div><div class="card"><div class="form-row"><input type="text" id="task-title" placeholder="任务标题" style="flex:2;"><select id="task-assignee" style="max-width:180px;"><option value="">选择负责人</option></select><input type="date" id="task-deadline"><button class="btn btn-primary btn-sm" id="add-task-btn">创建</button></div></div><div class="card"><div id="tasks-list" class="empty-state"><i class="fa-solid fa-list-check"></i><p>暂无任务</p></div></div>`;
+      supabase.from('profiles').select('id, realname, username').eq('class_id', AppState.currentProfile.class_id).then(({ data: users }) => {
+        document.getElementById('task-assignee').innerHTML = '<option value="">选择负责人</option>' + users.map(u => `<option value="${u.id}">${escapeHtml(u.realname || u.username)}</option>`).join('');
+      });
+      document.getElementById('add-task-btn').addEventListener('click', async () => {
+        const title = document.getElementById('task-title').value.trim();
+        const assigneeId = document.getElementById('task-assignee').value;
+        if (!title || !assigneeId) { showToast('请填写完整', 'error'); return; }
+        await supabase.from('tasks').insert({ class_id: AppState.currentProfile.class_id, assigner_id: AppState.currentUser.id, assignee_id: assigneeId, title, deadline: document.getElementById('task-deadline').value || null });
+        document.getElementById('task-title').value = ''; showToast('任务已创建', 'success'); loadTasksList();
+      });
+      loadTasksList();
+    }
+
+    function loadTasksList() {
+      supabase.from('tasks').select('*, assignee:profiles!tasks_assignee_id_fkey(realname, username)').eq('class_id', AppState.currentProfile.class_id).order('created_at', { ascending: false }).then(({ data: tasks }) => {
+        const container = document.getElementById('tasks-list');
+        if (!tasks || tasks.length === 0) return;
+        container.innerHTML = tasks.map(t => `<div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;"><div><strong>${escapeHtml(t.title)}</strong><p style="font-size:11px;color:var(--text-secondary);">负责人: ${escapeHtml(t.assignee?.realname || t.assignee?.username || '-')} | 截止: ${t.deadline || '-'}</p></div><span class="badge ${t.status === 'completed' ? 'badge-success' : t.status === 'in_progress' ? 'badge-warning' : 'badge-info'}">${t.status === 'pending' ? '待处理' : t.status === 'in_progress' ? '进行中' : '已完成'}</span></div>`).join('');
+      });
+    }
+
+    // ==================== 用户管理 ====================
+    function loadUsers() {
+      if (!AppState.currentProfile || AppState.currentProfile.role !== 'admin') return;
+      const container = document.getElementById('page-users');
+      container.innerHTML = `<div class="page-header"><h2>用户管理</h2></div><div class="card"><div id="users-list" class="empty-state"><i class="fa-solid fa-user-shield"></i><p>加载中...</p></div></div>`;
+      supabase.from('profiles').select('*').order('created_at', { ascending: true }).then(({ data }) => {
+        const list = document.getElementById('users-list');
+        if (!data || data.length === 0) { list.innerHTML = '<i class="fa-solid fa-user-shield"></i><p>暂无用户</p>'; return; }
+        list.innerHTML = data.map(u => `<div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;"><div><strong>${escapeHtml(u.username)}</strong> <span style="font-size:11px;color:var(--text-secondary);">${escapeHtml(u.realname || '')}</span> <span class="badge ${u.is_active ? 'badge-success' : 'badge-danger'}">${u.is_active ? '启用' : '禁用'}</span></div><div><select class="role-select" data-id="${u.id}" style="padding:4px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;"><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>管理员</option><option value="class_teacher" ${u.role === 'class_teacher' ? 'selected' : ''}>班主任</option><option value="subject_teacher" ${u.role === 'subject_teacher' ? 'selected' : ''}>科任教师</option></select> <button class="btn btn-sm ${u.is_active ? 'btn-danger' : 'btn-success'} toggle-user" data-id="${u.id}" data-active="${u.is_active}">${u.is_active ? '禁用' : '启用'}</button></div></div>`).join('');
+        list.querySelectorAll('.role-select').forEach(sel => sel.addEventListener('change', async (e) => { await supabase.from('profiles').update({ role: e.target.value }).eq('id', e.target.dataset.id); showToast('角色已更新', 'success'); }));
+        list.querySelectorAll('.toggle-user').forEach(btn => btn.addEventListener('click', async (e) => {
+          if (e.currentTarget.dataset.id === AppState.currentUser.id) { showToast('不能禁用自己', 'error'); return; }
+          await supabase.from('profiles').update({ is_active: !(e.currentTarget.dataset.active === 'true') }).eq('id', e.currentTarget.dataset.id);
+          showToast('状态已更新', 'success'); loadUsers();
+        }));
+      });
+    }
+
+    // ==================== Banner 信息 ====================
+    async function loadBannerInfo() {
+      const infoDiv = document.getElementById('banner-date-info');
+      const today = new Date();
+      const dateStr = `${today.getFullYear()}年${today.getMonth()+1}月${today.getDate()}日 星期${'日一二三四五六'[today.getDay()]}`;
+      let schoolStart = AppState.schoolStartDate || '2026-09-01';
+      const startDate = new Date(schoolStart);
+      const diffDays = Math.ceil((startDate - today) / (24*60*60*1000));
+      let daysText = '';
+      if (diffDays > 0) daysText = `距开学还有 ${diffDays} 天`;
+      else if (diffDays === 0) daysText = '今天开学！';
+      else daysText = `已开学 ${Math.abs(diffDays)} 天`;
+      const quotes = [
+        '教育不是灌满一桶水，而是点燃一把火。 —— 叶芝',
+        '学而不思则罔，思而不学则殆。 —— 孔子',
+        '教育是改变世界最强大的武器。 —— 曼德拉',
+        'The best way to predict the future is to create it. —— Peter Drucker',
+        '千里之行，始于足下。 —— 老子',
+        '兴趣是最好的老师。 —— 爱因斯坦',
+        '教育的目的在于让人能够继续教育自己。 —— 杜威',
+        '授人以鱼不如授人以渔。 —— 谚语'
+      ];
+      const quote = quotes[Math.floor(Math.random() * quotes.length)];
+      infoDiv.innerHTML = `${dateStr}<br>${daysText}<br><em>${quote}</em>`;
+    }
+
+
+
+
   </script>
 </body>
 </html>
