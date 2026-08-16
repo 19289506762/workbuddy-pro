@@ -156,6 +156,10 @@
     .seat-item.male { border-left:3px solid #3b82f6; }
     .seat-item.female { border-left:3px solid #ec4899; }
     .seat-item.selected { border-color:var(--primary); box-shadow:0 0 15px rgba(109,93,252,0.5); }
+    .seat-grid-wrapper { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px; }
+    .seat-row { display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .seat-group { display: flex; gap: 4px; }
+    .seat-group-divider { width: 30px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-size: 9px; letter-spacing: 1px; flex-shrink: 0; }
 
     .rollcall-display-box { font-size:52px; font-weight:800; margin:15px 0; color:#fff; text-shadow:0 0 30px rgba(109,93,252,0.8); letter-spacing:2px; min-height:80px; display:flex; align-items:center; justify-content:center; transition: transform 0.1s; }
     .rollcall-display-box.rolling { animation: pulse 0.2s ease infinite alternate; }
@@ -1063,6 +1067,7 @@
     }
 
     // ==================== 座次表（修复+显示职务） ====================
+       // ==================== 座次表（修复版：flex布局，讲台在上，1-2/3-4/5-6/7-8列分组） ====================
     function loadSeating() {
       const container = document.getElementById('page-seating');
       container.innerHTML = `
@@ -1073,9 +1078,9 @@
             <button class="btn btn-outline btn-sm" id="reset-seat-btn"><i class="fa-solid fa-rotate"></i> 清空座位</button>
             <span style="font-size:11px;color:var(--text-secondary);"><span style="color:#3b82f6;">■</span>男 <span style="color:#ec4899;">■</span>女</span>
           </div></div>
-          <div style="text-align:center;margin-bottom:10px;"><span style="background:rgba(255,255,255,0.1);padding:5px 20px;border-radius:6px;letter-spacing:2px;font-size:12px;">讲 台</span></div>
+          <div style="text-align:center;margin-bottom:15px;"><span style="background:rgba(255,255,255,0.1);padding:5px 30px;border-radius:6px;letter-spacing:3px;font-size:13px;">讲 台</span></div>
           <div id="seat-grid-container"></div>
-          <p style="margin-top:8px;color:var(--text-secondary);font-size:11px;">1-2列、3-4列、5-6列、7-8列为小组，组间过道。点击学生交换座位。</p>
+          <p style="margin-top:10px;color:var(--text-secondary);font-size:11px;">每行8列，1-2列、3-4列、5-6列、7-8列为一组，组间过道。点击学生交换座位。</p>
         </div>
         <div class="card"><div class="card-header"><h3>未就座学生</h3></div><div id="unseated-students" class="empty-state"><i class="fa-solid fa-chair"></i><p>暂无未就座学生</p></div></div>`;
       if (!AppState.currentProfile) return;
@@ -1090,14 +1095,16 @@
       const container = document.getElementById('seat-grid-container');
       container.innerHTML = '';
       const maxSeat = 64;
-      const seatMap = {}; AppState.allStudents.forEach(s => { if (s.seat && s.seat <= 64) seatMap[s.seat] = s; });
+      const seatMap = {};
+      AppState.allStudents.forEach(s => { if (s.seat && s.seat <= 64) seatMap[s.seat] = s; });
       let html = '<div class="seat-grid-wrapper">';
+      // 8行，每行8个座位，分4组，每组2个，组间有过道
       for (let row = 0; row < 8; row++) {
         html += '<div class="seat-row">';
         for (let group = 0; group < 4; group++) {
           html += '<div class="seat-group">';
           for (let col = 0; col < 2; col++) {
-            const seatNum = row * 8 + group * 2 + col + 1;
+            const seatNum = row * 8 + group * 2 + col + 1; // 座位号：1~64，从左到右、从前到后
             if (seatNum > maxSeat) break;
             const student = seatMap[seatNum];
             const genderClass = student ? (student.gender === '男' ? 'male' : student.gender === '女' ? 'female' : '') : '';
@@ -1108,7 +1115,9 @@
             </div>`;
           }
           html += '</div>';
-          if (group < 3) { html += '<div class="seat-group-divider">过道</div>'; }
+          if (group < 3) {
+            html += '<div class="seat-group-divider">过道</div>';
+          }
         }
         html += '</div>';
       }
@@ -2579,10 +2588,6 @@
       const quote = quotes[Math.floor(Math.random() * quotes.length)];
       infoDiv.innerHTML = `${dateStr}<br>${daysText}<br><em>${quote}</em>`;
     }
-
-
-
-
   </script>
 </body>
 </html>
